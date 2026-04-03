@@ -1,14 +1,18 @@
 /**
- * Preferences — async localStorage-backed shim.
+ * Preferences — async storage shim.
  *
- * This mirrors the @capacitor/preferences API surface exactly:
- *   set({ key, value }), get({ key }), remove({ key }), clear()
+ * On Capacitor native: delegates to @capacitor/preferences (dynamic import).
+ * On web / browser: falls back to localStorage with an `nk_pref_` prefix.
  *
- * Because it wraps localStorage, all data survives app restarts on
- * both browser and Android WebView. When moving to a real Capacitor
- * build, swap this module for @capacitor/preferences with no other
- * changes needed.
+ * API surface mirrors @capacitor/preferences exactly so the rest of the
+ * codebase never needs to change when running in either environment.
+ *
+ * The `@capacitor/preferences` import is done via Function constructor to
+ * prevent Rollup/Vite from attempting to resolve it at build time — the
+ * package is only present at runtime inside the Capacitor Android shell.
  */
+
+import { isCapacitorNative } from "./capacitorStorage";
 
 const PREFIX = "nk_pref_";
 
@@ -16,7 +20,13 @@ function prefKey(key: string): string {
   return `${PREFIX}${key}`;
 }
 
-export const Preferences = {
+/** Dynamic import that bypasses Rollup module resolution at build time */
+async function dynamicImport(pkg: string): Promise<any> {
+  return new Function("p", "return import(p)")(pkg);
+}
+
+/** localStorage-backed shim with the same API as @capacitor/preferences */
+const localStorageShim = {
   async set({ key, value }: { key: string; value: string }): Promise<void> {
     try {
       localStorage.setItem(prefKey(key), value);
@@ -52,6 +62,43 @@ export const Preferences = {
     } catch {
       // Fail silently
     }
+  },
+};
+
+/** Resolves to the real @capacitor/preferences on native, shim on web. */
+async function getPlatformPreferences() {
+  if (isCapacitorNative()) {
+    try {
+      const { Preferences: CapPrefs } = await dynamicImport(
+        "@capacitor/preferences",
+      );
+      return CapPrefs;
+    } catch {
+      // Package not available — fall through to shim
+    }
+  }
+  return localStorageShim;
+}
+
+export const Preferences = {
+  async set({ key, value }: { key: string; value: string }): Promise<void> {
+    const prefs = await getPlatformPreferences();
+    return prefs.set({ key, value });
+  },
+
+  async get({ key }: { key: string }): Promise<{ value: string | null }> {
+    const prefs = await getPlatformPreferences();
+    return prefs.get({ key });
+  },
+
+  async remove({ key }: { key: string }): Promise<void> {
+    const prefs = await getPlatformPreferences();
+    return prefs.remove({ key });
+  },
+
+  async clear(): Promise<void> {
+    const prefs = await getPlatformPreferences();
+    return prefs.clear();
   },
 };
 

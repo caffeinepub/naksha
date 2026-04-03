@@ -1,8 +1,11 @@
 /**
  * Monarch Storage — Folder-based File System Access API persistence.
+ * On Capacitor native: uses @capacitor/filesystem (Documents directory).
+ * On web: uses the File System Access API (showDirectoryPicker).
  * Falls back to localStorage gracefully on unsupported browsers.
  */
 
+import { isCapacitorNative, saveToDocuments } from "./capacitorStorage";
 import { isDirectoryPickerAvailable } from "./fileDownload";
 import { getDirHandle, saveDirHandle, saveSnapshotIDB } from "./indexedDB";
 import { PREF_KEYS, Preferences } from "./preferences";
@@ -37,15 +40,21 @@ export function isFolderSystemSupported(): boolean {
 }
 
 export function hasFolderLinked(): boolean {
+  // On Capacitor native we always treat storage as "linked" — Documents is always available
+  if (isCapacitorNative()) return true;
   return dirHandle !== null;
 }
 
 export function getFolderName(): string {
+  if (isCapacitorNative()) return "Documents";
   return folderName;
 }
 
 /** Ask user to pick a folder. Returns true on success. */
 export async function selectFolder(): Promise<boolean> {
+  // On Capacitor native the Documents directory is always available
+  if (isCapacitorNative()) return true;
+
   if (!isDirectoryPickerAvailable()) {
     return false;
   }
@@ -74,6 +83,9 @@ export async function selectFolder(): Promise<boolean> {
 export async function tryRelinkFolder(): Promise<
   "linked" | "unreachable" | "none"
 > {
+  // On Capacitor native, Documents is always available
+  if (isCapacitorNative()) return "linked";
+
   try {
     const stored = await getDirHandle();
     if (!stored) return "none";
@@ -164,6 +176,25 @@ function isValidSnapshot(snap: Record<string, unknown>): boolean {
 export async function syncToFolder(
   onStatus?: (s: BackupStatus) => void,
 ): Promise<void> {
+  // === Capacitor native branch: use @capacitor/filesystem ===
+  if (isCapacitorNative()) {
+    onStatus?.("saving");
+    const snap = buildSnapshot() as Record<string, unknown>;
+    if (!isValidSnapshot(snap)) {
+      console.warn("Monarch: snapshot validation failed — skipping write");
+      onStatus?.("error");
+      return;
+    }
+    const ok = await saveToDocuments(
+      "naksha_master_data.json",
+      JSON.stringify(snap, null, 2),
+    );
+    onStatus?.(ok ? "saved" : "error");
+    if (ok) saveSnapshotIDB(snap).catch(() => {});
+    return;
+  }
+
+  // === Web / File System Access API branch ===
   if (!dirHandle) {
     onStatus?.("no-file");
     return;
@@ -222,6 +253,16 @@ export async function testConnection(): Promise<{
   folderName: string;
   error?: string;
 }> {
+  // On Capacitor native, test by writing and reading a temp file
+  if (isCapacitorNative()) {
+    const ok = await saveToDocuments("_naksha_test_.tmp", "test");
+    return {
+      success: ok,
+      folderName: "Documents",
+      error: ok ? undefined : "Could not write to Documents folder",
+    };
+  }
+
   if (!dirHandle) {
     return { success: false, folderName: "", error: "No folder linked" };
   }

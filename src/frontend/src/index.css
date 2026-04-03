@@ -227,9 +227,28 @@ input[type="range"]::-webkit-slider-thumb {
   box-shadow: 0 0 8px var(--accent-glow);
 }
 
-/* === Safe area padding === */
+/* === Safe area padding (bottom nav) === */
 .pb-safe {
   padding-bottom: calc(84px + env(safe-area-inset-bottom));
+}
+
+/* === Top safe area — notch / status bar fix === */
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+/**
+ * .header-safe — use on the outermost header/top-bar container.
+ * Pushes content below the phone's camera notch or status bar.
+ * Minimum 16px so it doesn't collapse on phones without a notch.
+ */
+.header-safe {
+  padding-top: env(safe-area-inset-top);
+  padding-top: max(16px, env(safe-area-inset-top));
+}
+
+.mt-safe {
+  margin-top: env(safe-area-inset-top);
 }
 
 /* === Neon glow utilities === */

@@ -60,7 +60,11 @@ const TimerStatusBar: FC<Props> = ({ timerState, remaining, onGoToTimer }) => {
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
         borderBottom: `2px solid ${palette.accent}40`,
-        padding: "10px 18px",
+        /* Push content below the notch / status bar */
+        paddingTop: "max(10px, env(safe-area-inset-top))",
+        paddingBottom: 10,
+        paddingLeft: 18,
+        paddingRight: 18,
         display: "flex",
         alignItems: "center",
         gap: 10,

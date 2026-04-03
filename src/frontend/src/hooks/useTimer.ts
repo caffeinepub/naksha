@@ -7,6 +7,10 @@ import {
   playResumeSound,
   playStartChime,
 } from "../utils/audio";
+import {
+  cancelTimerNotification,
+  scheduleTimerCompleteNotification,
+} from "../utils/capacitorNotifications";
 import { clearTimerStateIDB, saveTimerStateIDB } from "../utils/indexedDB";
 import {
   clearTimerState,
@@ -164,6 +168,9 @@ export function useTimer(onComplete: (actualMs: number) => void) {
           elapsed: 0,
         },
       });
+      // Schedule a precise Capacitor notification for when the timer ends
+      cancelTimerNotification();
+      scheduleTimerCompleteNotification(topic, durationMs);
     },
     [saveState],
   );
@@ -211,6 +218,8 @@ export function useTimer(onComplete: (actualMs: number) => void) {
     setState(newState);
     stateRef.current = newState;
     postToSW({ type: "TIMER_STOP" });
+    // Cancel the scheduled Capacitor notification since user stopped manually
+    cancelTimerNotification();
     onComplete(elapsedNow);
   }, [state, clearState, onComplete]);
 

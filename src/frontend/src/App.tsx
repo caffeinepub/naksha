@@ -19,6 +19,15 @@ import type { TabId, Topic } from "./types";
 import { PREF_KEYS, Preferences } from "./utils/preferences";
 import { getUsername } from "./utils/storage";
 
+/**
+ * Safe-area-aware top offset for fixed overlay elements.
+ * On phones with a camera notch this evaluates to the notch height;
+ * on flat-screen phones it falls back to the provided base value.
+ */
+function safeTop(base: number): string {
+  return `max(${base}px, calc(env(safe-area-inset-top) + ${base}px))`;
+}
+
 /** Bell icon in top-left showing notification permission status */
 function BellStatusIcon() {
   const [perm, setPerm] = useState<NotificationPermission>("default");
@@ -66,7 +75,7 @@ function BellStatusIcon() {
     <div
       style={{
         position: "fixed",
-        top: 14,
+        top: safeTop(10),
         left: 16,
         zIndex: 200,
         display: "flex",
@@ -156,7 +165,7 @@ function StorageStatusBadge() {
         data-ocid="backup.toggle"
         style={{
           position: "fixed",
-          top: 14,
+          top: safeTop(10),
           right: 16,
           zIndex: 200,
           display: "flex",
@@ -196,7 +205,7 @@ function StorageStatusBadge() {
     <div
       style={{
         position: "fixed",
-        top: 14,
+        top: safeTop(10),
         right: 16,
         zIndex: 200,
         display: "flex",
@@ -226,7 +235,7 @@ function StorageStatusBadge() {
       <button
         type="button"
         onClick={handleClick}
-        title={`Linked: ${folderName} — Click to sync`}
+        title={`Linked: ${folderName} \u2014 Click to sync`}
         data-ocid="backup.toggle"
         style={{
           display: "flex",
