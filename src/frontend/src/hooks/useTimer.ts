@@ -93,7 +93,8 @@ export function useTimer(onComplete: (actualMs: number) => void) {
         const newState = null;
         setState(newState);
         stateRef.current = newState;
-        postToSW({ type: "TIMER_STOP" });
+        // Send TIMER_COMPLETE to SW so it fires the vibrate notification
+        postToSW({ type: "TIMER_COMPLETE" });
         onComplete(elapsedNow);
       }
     }, TICK_MS);

@@ -1,9 +1,9 @@
 /**
- * Monarch Storage — File System Access API based persistence.
+ * Monarch Storage — Folder-based File System Access API persistence.
  * Falls back to localStorage gracefully on unsupported browsers.
  */
 
-import { saveSnapshotIDB } from "./indexedDB";
+import { getDirHandle, saveDirHandle, saveSnapshotIDB } from "./indexedDB";
 import {
   getAppearance,
   getChapters,
@@ -24,45 +24,88 @@ import {
   setUsername,
 } from "./storage";
 
-const FILE_HANDLE_KEY = "nk_monarchFileHandleSupported";
-
 export type BackupStatus = "idle" | "saving" | "saved" | "error" | "no-file";
 
-// In-memory handle — persists for the session only (File System Access API requirement)
-let fileHandle: FileSystemFileHandle | null = null;
+// In-memory directory handle — persists for the session
+let dirHandle: FileSystemDirectoryHandle | null = null;
+let folderName = "";
 
-export function isFileSystemSupported(): boolean {
-  return typeof window !== "undefined" && "showSaveFilePicker" in window;
+export function isFolderSystemSupported(): boolean {
+  return typeof window !== "undefined" && "showDirectoryPicker" in window;
 }
 
-export function hasLinkedFile(): boolean {
-  return fileHandle !== null;
+export function hasFolderLinked(): boolean {
+  return dirHandle !== null;
 }
 
-/** Ask user to pick or create a file. Returns true on success. */
-export async function linkFile(): Promise<boolean> {
-  if (!isFileSystemSupported()) return false;
+export function getFolderName(): string {
+  return folderName;
+}
+
+/** Ask user to pick a folder. Returns true on success. */
+export async function selectFolder(): Promise<boolean> {
+  if (!isFolderSystemSupported()) return false;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const picker = (window as any).showSaveFilePicker as (
-      opts: object,
-    ) => Promise<FileSystemFileHandle>;
-    const handle = await picker({
-      suggestedName: "naksha_data.json",
-      types: [
-        {
-          description: "Naksha Data File",
-          accept: { "application/json": [".json"] },
-        },
-      ],
-    });
-    fileHandle = handle;
-    localStorage.setItem(FILE_HANDLE_KEY, "1");
+    const picker = (window as any).showDirectoryPicker as (
+      opts?: object,
+    ) => Promise<FileSystemDirectoryHandle>;
+    const handle = await picker({ mode: "readwrite" });
+    dirHandle = handle;
+    folderName = handle.name;
+    await saveDirHandle(handle);
     return true;
   } catch (e: unknown) {
     if ((e as { name?: string }).name !== "AbortError")
-      console.warn("Monarch linkFile error:", e);
+      console.warn("Monarch selectFolder error:", e);
     return false;
+  }
+}
+
+/**
+ * Attempt to re-link a previously stored folder handle from IndexedDB.
+ * Returns 'linked' | 'unreachable' | 'none'
+ */
+export async function tryRelinkFolder(): Promise<
+  "linked" | "unreachable" | "none"
+> {
+  try {
+    const stored = await getDirHandle();
+    if (!stored) return "none";
+
+    // queryPermission is available on FileSystemHandle in Chrome 86+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handle = stored as any;
+    let permission: PermissionState = "prompt";
+
+    try {
+      permission = await handle.queryPermission({ mode: "readwrite" });
+    } catch {
+      // queryPermission not available in this environment
+    }
+
+    if (permission === "granted") {
+      dirHandle = stored;
+      folderName = stored.name;
+      return "linked";
+    }
+
+    if (permission === "prompt") {
+      try {
+        const result = await handle.requestPermission({ mode: "readwrite" });
+        if (result === "granted") {
+          dirHandle = stored;
+          folderName = stored.name;
+          return "linked";
+        }
+      } catch {
+        // requestPermission failed silently
+      }
+    }
+
+    return "unreachable";
+  } catch {
+    return "none";
   }
 }
 
@@ -105,11 +148,11 @@ function isValidSnapshot(snap: Record<string, unknown>): boolean {
   );
 }
 
-/** Write snapshot to the linked file */
-export async function syncToFile(
+/** Write snapshot to naksha_master_data.json in the linked folder */
+export async function syncToFolder(
   onStatus?: (s: BackupStatus) => void,
 ): Promise<void> {
-  if (!fileHandle) {
+  if (!dirHandle) {
     onStatus?.("no-file");
     return;
   }
@@ -122,15 +165,63 @@ export async function syncToFile(
       onStatus?.("error");
       return;
     }
-    const writable = await fileHandle.createWritable();
+    const fileHandle = await dirHandle.getFileHandle(
+      "naksha_master_data.json",
+      {
+        create: true,
+      },
+    );
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const writable = await (fileHandle as any).createWritable();
     await writable.write(JSON.stringify(snap, null, 2));
     await writable.close();
     onStatus?.("saved");
     // Dual-write to IDB (fire-and-forget)
     saveSnapshotIDB(snap).catch(() => {});
   } catch (e) {
-    console.warn("Monarch sync error:", e);
+    console.warn("Monarch syncToFolder error:", e);
     onStatus?.("error");
+  }
+}
+
+/** Backward-compat alias: syncToFile → syncToFolder */
+export const syncToFile = syncToFolder;
+
+/** Backward-compat: hasLinkedFile → hasFolderLinked */
+export const hasLinkedFile = hasFolderLinked;
+
+/** Backward-compat: isFileSystemSupported → isFolderSystemSupported */
+export const isFileSystemSupported = isFolderSystemSupported;
+
+/** Backward-compat: linkFile — now uses folder picker */
+export async function linkFile(): Promise<boolean> {
+  return selectFolder();
+}
+
+/**
+ * Test the current folder connection by writing and deleting a small file.
+ */
+export async function testConnection(): Promise<{
+  success: boolean;
+  folderName: string;
+  error?: string;
+}> {
+  if (!dirHandle) {
+    return { success: false, folderName: "", error: "No folder linked" };
+  }
+  const name = dirHandle.name;
+  try {
+    const testHandle = await dirHandle.getFileHandle("_naksha_test_.tmp", {
+      create: true,
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const writable = await (testHandle as any).createWritable();
+    await writable.write("naksha-test");
+    await writable.close();
+    await dirHandle.removeEntry("_naksha_test_.tmp");
+    return { success: true, folderName: name };
+  } catch (e) {
+    return { success: false, folderName: name, error: String(e) };
   }
 }
 

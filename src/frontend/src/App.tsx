@@ -1,4 +1,4 @@
-import { HardDrive, Link2 } from "lucide-react";
+import { Bell, BellOff, FolderOpen, RefreshCw, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import BottomNav from "./components/BottomNav";
 import NotificationBanner from "./components/NotificationBanner";
@@ -17,80 +17,178 @@ import TopicsScreen from "./screens/TopicsScreen";
 import type { TabId, Topic } from "./types";
 import { getUsername } from "./utils/storage";
 
-function BackupIcon() {
-  const { status, fileLinked, linkFileAndSync, triggerFullSync } = useBackup();
+/** Bell icon in top-left showing notification permission status */
+function BellStatusIcon() {
+  const [perm, setPerm] = useState<NotificationPermission>("default");
+
+  useEffect(() => {
+    if ("Notification" in window) setPerm(Notification.permission);
+  }, []);
+
+  // Poll every 3 seconds to detect permission changes
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if ("Notification" in window) setPerm(Notification.permission);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const isDenied = perm === "denied";
+  const isGranted = perm === "granted";
+
+  const iconColor = isDenied
+    ? "#EF4444"
+    : isGranted
+      ? "#22C55E"
+      : "rgba(255,255,255,0.35)";
+
+  const pillBg = isDenied
+    ? "rgba(239,68,68,0.08)"
+    : isGranted
+      ? "rgba(34,197,94,0.08)"
+      : "rgba(255,255,255,0.05)";
+
+  const pillBorder = isDenied
+    ? "1px solid rgba(239,68,68,0.25)"
+    : isGranted
+      ? "1px solid rgba(34,197,94,0.2)"
+      : "1px solid rgba(255,255,255,0.10)";
+
+  const glow = isGranted
+    ? "0 0 10px rgba(34,197,94,0.5)"
+    : isDenied
+      ? "0 0 8px rgba(239,68,68,0.35)"
+      : "none";
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 14,
+        left: 16,
+        zIndex: 200,
+        display: "flex",
+        alignItems: "center",
+        gap: 5,
+        background: pillBg,
+        border: pillBorder,
+        borderRadius: 20,
+        padding: "5px 9px",
+        pointerEvents: "none",
+        transition: "all 0.4s",
+      }}
+      title={`Notifications: ${perm}`}
+    >
+      {isDenied ? (
+        <BellOff
+          size={13}
+          color={iconColor}
+          style={{
+            filter: glow !== "none" ? `drop-shadow(${glow})` : undefined,
+            flexShrink: 0,
+          }}
+        />
+      ) : (
+        <Bell
+          size={13}
+          color={iconColor}
+          style={{
+            filter: glow !== "none" ? `drop-shadow(${glow})` : undefined,
+            flexShrink: 0,
+            animation: isGranted
+              ? "bellPulse 2.5s ease-in-out infinite"
+              : "none",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Storage status badge in top-right */
+function StorageStatusBadge() {
+  const {
+    status,
+    folderLinked,
+    folderName,
+    linkFolderAndSync,
+    triggerFullSync,
+  } = useBackup();
   const [pulse, setPulse] = useState(false);
+  const [showSpin, setShowSpin] = useState(false);
   const prevStatusRef = useRef<string>(status);
 
   useEffect(() => {
-    if (status === "saved" && prevStatusRef.current !== "saved") {
+    if (status === "saving") {
+      setShowSpin(true);
+    } else if (prevStatusRef.current === "saving" && status === "saved") {
       setPulse(true);
-      const t = setTimeout(() => setPulse(false), 800);
-      return () => clearTimeout(t);
+      // Keep spin visible for 1 second after save
+      const spinTimer = setTimeout(() => setShowSpin(false), 1000);
+      const pulseTimer = setTimeout(() => setPulse(false), 800);
+      return () => {
+        clearTimeout(spinTimer);
+        clearTimeout(pulseTimer);
+      };
+    } else {
+      setShowSpin(false);
     }
     prevStatusRef.current = status;
   }, [status]);
 
-  const isSaving = status === "saving";
-  const isError = status === "error";
-
-  const iconColor = !fileLinked
-    ? "rgba(255,255,255,0.4)"
-    : isError
-      ? "#EF4444"
-      : isSaving
-        ? "#F59E0B"
-        : "#22C55E";
-
-  const glow = !fileLinked
-    ? "none"
-    : isError
-      ? "0 0 8px rgba(239,68,68,0.6)"
-      : isSaving
-        ? "0 0 8px rgba(245,158,11,0.6)"
-        : pulse
-          ? "0 0 12px rgba(34,197,94,0.8)"
-          : "0 0 6px rgba(34,197,94,0.4)";
-
-  const pillBg = !fileLinked
-    ? "rgba(255,255,255,0.06)"
-    : isError
-      ? "rgba(239,68,68,0.08)"
-      : isSaving
-        ? "rgba(245,158,11,0.08)"
-        : "rgba(34,197,94,0.08)";
-
-  const pillBorder = !fileLinked
-    ? "1px solid rgba(255,255,255,0.12)"
-    : isError
-      ? "1px solid rgba(239,68,68,0.3)"
-      : isSaving
-        ? "1px solid rgba(245,158,11,0.3)"
-        : "1px solid rgba(34,197,94,0.25)";
-
   const handleClick = () => {
-    if (!fileLinked) {
-      linkFileAndSync();
+    if (!folderLinked) {
+      linkFolderAndSync();
     } else {
       triggerFullSync();
     }
   };
 
-  const labelText = !fileLinked
-    ? "Connect File"
-    : isSaving
-      ? "Saving\u2026"
-      : isError
-        ? "Error"
-        : "Connected";
+  // Disconnected state
+  if (!folderLinked) {
+    return (
+      <button
+        type="button"
+        onClick={handleClick}
+        title="Select a folder to enable auto-save"
+        data-ocid="backup.toggle"
+        style={{
+          position: "fixed",
+          top: 14,
+          right: 16,
+          zIndex: 200,
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+          background: "rgba(239,68,68,0.08)",
+          border: "1px solid rgba(239,68,68,0.25)",
+          borderRadius: 20,
+          padding: "5px 10px",
+          cursor: "pointer",
+          outline: "none",
+          WebkitTapHighlightColor: "transparent",
+          transition: "all 0.3s",
+        }}
+      >
+        <WifiOff size={12} color="#EF4444" style={{ flexShrink: 0 }} />
+        <span
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: "#EF4444",
+            whiteSpace: "nowrap",
+            letterSpacing: "0.03em",
+          }}
+        >
+          No Folder Linked
+        </span>
+      </button>
+    );
+  }
 
-  const labelColor = !fileLinked
-    ? "rgba(255,255,255,0.5)"
-    : isError
-      ? "#EF4444"
-      : isSaving
-        ? "#F59E0B"
-        : "#22C55E";
+  // Connected / syncing
+  const displayName =
+    folderName.length > 12 ? `${folderName.slice(0, 12)}\u2026` : folderName;
 
   return (
     <div
@@ -101,12 +199,11 @@ function BackupIcon() {
         zIndex: 200,
         display: "flex",
         alignItems: "center",
-        gap: 6,
-        maxWidth: 430,
+        gap: 5,
       }}
     >
-      {/* Saved ✓ pulse label */}
-      {fileLinked && (
+      {/* Saved pulse label */}
+      {pulse && (
         <div
           style={{
             fontSize: 10,
@@ -116,75 +213,149 @@ function BackupIcon() {
             border: "1px solid rgba(34,197,94,0.3)",
             borderRadius: 20,
             padding: "2px 7px",
-            opacity: pulse ? 1 : 0,
-            transform: pulse ? "scale(1)" : "scale(0.9)",
-            transition: "opacity 0.3s, transform 0.3s",
-            pointerEvents: "none",
             whiteSpace: "nowrap",
+            pointerEvents: "none",
           }}
         >
           Saved \u2713
         </div>
       )}
 
-      {/* Main pill button */}
       <button
         type="button"
         onClick={handleClick}
-        title={
-          fileLinked
-            ? "Click to save progress to file"
-            : "Connect a local file to enable auto-save"
-        }
+        title={`Linked: ${folderName} — Click to sync`}
         data-ocid="backup.toggle"
         style={{
           display: "flex",
           alignItems: "center",
           gap: 5,
-          background: pillBg,
-          border: pillBorder,
+          background: "rgba(34,197,94,0.08)",
+          border: "1px solid rgba(34,197,94,0.25)",
           borderRadius: 20,
           padding: "5px 10px",
           cursor: "pointer",
-          maxHeight: 30,
           outline: "none",
-          transition: "background 0.3s, border 0.3s",
           WebkitTapHighlightColor: "transparent",
+          boxShadow: pulse ? "0 0 12px rgba(34,197,94,0.4)" : "none",
+          transition: "all 0.3s",
         }}
       >
-        {fileLinked ? (
-          <HardDrive
-            size={14}
-            color={iconColor}
+        {showSpin ? (
+          <RefreshCw
+            size={12}
+            color="#22C55E"
             style={{
-              filter: glow !== "none" ? `drop-shadow(${glow})` : undefined,
-              transform: pulse ? "scale(1.3)" : "scale(1)",
-              transition: "color 0.4s, filter 0.4s, transform 0.3s",
+              animation: "spin 0.6s linear infinite",
               flexShrink: 0,
             }}
           />
         ) : (
-          <Link2
-            size={14}
-            color={iconColor}
+          <FolderOpen
+            size={12}
+            color="#22C55E"
             style={{
+              filter: "drop-shadow(0 0 5px rgba(34,197,94,0.6))",
               flexShrink: 0,
-              transition: "color 0.3s",
+              transition: "filter 0.3s",
             }}
           />
         )}
         <span
           style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: labelColor,
+            fontSize: 10,
+            fontWeight: 700,
+            color: "#22C55E",
             whiteSpace: "nowrap",
             letterSpacing: "0.02em",
-            transition: "color 0.3s",
           }}
         >
-          {labelText}
+          Linked: {displayName}
         </span>
+      </button>
+    </div>
+  );
+}
+
+/** Alert banner shown when linked folder becomes unreachable */
+function FolderUnreachableAlert() {
+  const { folderUnreachable, linkFolderAndSync } = useBackup();
+  const [dismissed, setDismissed] = useState(false);
+
+  if (!folderUnreachable || dismissed) return null;
+
+  return (
+    <div
+      data-ocid="storage.error_state"
+      style={{
+        position: "fixed",
+        bottom: 90,
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: "calc(100% - 32px)",
+        maxWidth: 398,
+        zIndex: 300,
+        background:
+          "linear-gradient(135deg, rgba(245,158,11,0.95) 0%, rgba(251,191,36,0.9) 100%)",
+        borderRadius: 14,
+        padding: "12px 14px",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        boxShadow: "0 8px 32px rgba(245,158,11,0.4)",
+      }}
+    >
+      <WifiOff size={16} color="#1C1917" style={{ flexShrink: 0 }} />
+      <p
+        style={{
+          fontSize: 12,
+          color: "#1C1917",
+          flex: 1,
+          margin: 0,
+          lineHeight: 1.4,
+          fontWeight: 600,
+        }}
+      >
+        Warning: Master Folder moved. Using Internal Backup.
+      </p>
+      <button
+        type="button"
+        data-ocid="storage.relink.button"
+        onClick={() => {
+          linkFolderAndSync();
+          setDismissed(true);
+        }}
+        style={{
+          background: "#1C1917",
+          color: "#FEF3C7",
+          border: "none",
+          borderRadius: 8,
+          padding: "5px 10px",
+          fontSize: 11,
+          fontWeight: 700,
+          cursor: "pointer",
+          flexShrink: 0,
+          whiteSpace: "nowrap",
+        }}
+      >
+        Re-link
+      </button>
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        data-ocid="storage.dismiss.close_button"
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: "#1C1917",
+          fontSize: 16,
+          lineHeight: 1,
+          flexShrink: 0,
+          padding: "0 4px",
+        }}
+      >
+        \u00d7
       </button>
     </div>
   );
@@ -326,7 +497,9 @@ function AppInner() {
       <div style={{ position: "relative", zIndex: 1 }}>
         {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
         <NotificationBanner timerRunning={timer.isRunning || timer.isPaused} />
-        <BackupIcon />
+        <BellStatusIcon />
+        <StorageStatusBadge />
+        <FolderUnreachableAlert />
         <TimerStatusBar
           timerState={timer.timerState}
           remaining={timer.remaining}

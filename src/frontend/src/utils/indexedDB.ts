@@ -1,7 +1,7 @@
 import type { Session, TimerState } from "../types";
 
 const DB_NAME = "NakshaDB";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -16,6 +16,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains("snapshot")) {
         db.createObjectStore("snapshot", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("dirHandles")) {
+        db.createObjectStore("dirHandles", { keyPath: "id" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -125,6 +128,45 @@ export async function getSnapshotIDB(): Promise<Record<
         }
         const { id: _id, ...rest } = result as Record<string, unknown>;
         resolve(rest);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Save a FileSystemDirectoryHandle to IndexedDB (Chrome 86+) */
+export async function saveDirHandle(
+  handle: FileSystemDirectoryHandle,
+): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("dirHandles", "readwrite");
+      tx.objectStore("dirHandles").put({ id: "main", handle });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn("saveDirHandle error:", e);
+  }
+}
+
+/** Retrieve a stored FileSystemDirectoryHandle from IndexedDB */
+export async function getDirHandle(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("dirHandles", "readonly");
+      const req = tx.objectStore("dirHandles").get("main");
+      req.onsuccess = () => {
+        const result = req.result;
+        if (!result || !result.handle) {
+          resolve(null);
+          return;
+        }
+        resolve(result.handle as FileSystemDirectoryHandle);
       };
       req.onerror = () => reject(req.error);
     });

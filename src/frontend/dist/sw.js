@@ -1,5 +1,5 @@
-/* Naksha Service Worker — v4 */
-const CACHE_NAME = 'naksha-v4';
+/* Naksha Service Worker — v5 */
+const CACHE_NAME = 'naksha-v5';
 const ASSETS_TO_CACHE = ['/', '/index.html', '/manifest.json'];
 
 let timerInterval = null;
@@ -116,12 +116,13 @@ async function updateNotification() {
     renotify: false,
     silent: true,
     requireInteraction: true,
+    vibrate: [200, 100, 200],
     actions,
     data: { type: 'timer' },
   });
 }
 
-self.addEventListener('message', (event) => {
+self.addEventListener('message', async (event) => {
   const { type, payload } = event.data || {};
 
   if (type === 'TIMER_START') {
@@ -142,6 +143,7 @@ self.addEventListener('message', (event) => {
           body: `${minuteCount} minutes into your session.`,
           tag: 'naksha-milestone',
           silent: false,
+          vibrate: [200, 100, 200],
         });
       }
     }, 60000);
@@ -176,6 +178,32 @@ self.addEventListener('message', (event) => {
     }
   }
 
+  if (type === 'TIMER_COMPLETE') {
+    clearInterval(notificationInterval);
+    clearInterval(timerInterval);
+    timerData = null;
+    // Close existing timer notifications
+    self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
+
+    await self.registration.showNotification('Naksha \u23f1 Session Complete! \ud83c\udf89', {
+      body: 'Great work! Your study session is done.',
+      tag: 'timer-done',
+      renotify: true,
+      requireInteraction: true,
+      vibrate: [200, 100, 200],
+      data: { type: 'timer-complete' },
+    });
+  }
+
+  if (type === 'TEST_NOTIFICATION') {
+    await self.registration.showNotification('Naksha \ud83d\udd14 Test Notification', {
+      body: 'Notifications are working correctly! Your timer will appear here.',
+      tag: 'naksha-test',
+      renotify: true,
+      vibrate: [200, 100, 200],
+    });
+  }
+
   if (type === 'SCHEDULE_ALARM') {
     const { id, title, deadline } = payload;
     const delay = new Date(deadline).getTime() - Date.now();
@@ -186,6 +214,7 @@ self.addEventListener('message', (event) => {
           body: title,
           tag: `alarm-${id}`,
           requireInteraction: true,
+          vibrate: [200, 100, 200],
           data: { type: 'alarm', id },
         });
         delete scheduledAlarms[id];

@@ -6,29 +6,32 @@ import {
   Database,
   Download,
   Eye,
-  HardDrive,
+  FolderOpen,
   Image,
   Info,
-  Link2,
   Palette,
   RefreshCw,
   Star,
   Upload,
   User,
+  WifiOff,
   Zap,
 } from "lucide-react";
 import { type FC, useEffect, useRef, useState } from "react";
+import BellPermissionModal from "../components/BellPermissionModal";
 import { useAppearance } from "../context/AppearanceContext";
 import { useBackup } from "../context/BackupContext";
 import { usePalette } from "../context/ThemeContext";
 import type { PaletteId } from "../types";
 import {
   exportData,
-  hasLinkedFile,
+  getFolderName,
+  hasFolderLinked,
   importData,
-  isFileSystemSupported,
-  linkFile,
+  isFolderSystemSupported,
+  selectFolder,
   syncToLocalAndIDB,
+  testConnection,
 } from "../utils/monarchStorage";
 import { PALETTES } from "../utils/palettes";
 import { getUsername, setUsername } from "../utils/storage";
@@ -44,9 +47,16 @@ const SettingsScreen: FC = () => {
   );
   const [storageEstimate, setStorageEstimate] = useState<string>("");
   const [saved, setSaved] = useState(false);
-  const [fileLinked, setFileLinked] = useState(hasLinkedFile);
+  const [folderLinked, setFolderLinked] = useState(hasFolderLinked());
+  const [currentFolderName, setCurrentFolderName] = useState(getFolderName());
   const [importResult, setImportResult] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [bellModalOpen, setBellModalOpen] = useState(false);
+  const [testNotifCountdown, setTestNotifCountdown] = useState<number | null>(
+    null,
+  );
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -69,17 +79,69 @@ const SettingsScreen: FC = () => {
     }
   }, []);
 
+  // Poll notification permission every 3s
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if ("Notification" in window) setNotifPerm(Notification.permission);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleSaveName = () => {
     setUsername(username);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleNotifRequest = async () => {
-    if ("Notification" in window) {
-      const perm = await Notification.requestPermission();
-      setNotifPerm(perm);
+  const handleEnableNotifications = async () => {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "denied") {
+      setBellModalOpen(true);
+      return;
     }
+    const perm = await Notification.requestPermission();
+    setNotifPerm(perm);
+    if (perm === "denied") {
+      setBellModalOpen(true);
+    }
+  };
+
+  const handleTestNotification = () => {
+    if (testNotifCountdown !== null) return; // already counting
+    let remaining = 5;
+    setTestNotifCountdown(remaining);
+
+    countdownRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(countdownRef.current!);
+        countdownRef.current = null;
+        setTestNotifCountdown(null);
+        // Send test notification to service worker
+        if (
+          "serviceWorker" in navigator &&
+          navigator.serviceWorker.controller
+        ) {
+          navigator.serviceWorker.controller.postMessage({
+            type: "TEST_NOTIFICATION",
+          });
+        } else {
+          // Fallback: fire directly
+          if (
+            "Notification" in window &&
+            Notification.permission === "granted"
+          ) {
+            new Notification("Naksha \ud83d\udd14 Test Notification", {
+              body: "Notifications are working correctly! Your timer will appear here.",
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              ...("vibrate" in navigator ? { vibrate: [200, 100, 200] } : {}),
+            });
+          }
+        }
+      } else {
+        setTestNotifCountdown(remaining);
+      }
+    }, 1000);
   };
 
   const handlePersistStorage = async () => {
@@ -102,12 +164,28 @@ const SettingsScreen: FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleLinkFile = async () => {
-    const linked = await linkFile();
-    setFileLinked(linked);
+  const handleSelectFolder = async () => {
+    const linked = await selectFolder();
     if (linked) {
+      setFolderLinked(true);
+      setCurrentFolderName(getFolderName());
       triggerSync();
     }
+  };
+
+  const handleTestConnection = async () => {
+    setTestResult(null);
+    const result = await testConnection();
+    if (result.success) {
+      setTestResult(
+        `\u2705 Storage Verified: All systems synced to ${result.folderName}`,
+      );
+    } else {
+      setTestResult(
+        `\u274c Connection failed: ${result.error ?? "Unknown error"}`,
+      );
+    }
+    setTimeout(() => setTestResult(null), 5000);
   };
 
   const handleExport = () => {
@@ -128,9 +206,8 @@ const SettingsScreen: FC = () => {
 
   const handleSafeRefresh = async () => {
     setRefreshing(true);
-    // Save to localStorage + IDB immediately
     await syncToLocalAndIDB();
-    triggerSync(); // also trigger file sync if linked
+    triggerSync();
     await new Promise<void>((res) => setTimeout(res, 200));
     window.location.reload();
   };
@@ -279,10 +356,25 @@ const SettingsScreen: FC = () => {
     status === "saved"
       ? "Saved"
       : status === "saving"
-        ? "Saving…"
+        ? "Saving\u2026"
         : status === "error"
           ? "Error"
-          : "No file linked";
+          : "No folder linked";
+
+  // Notification permission styling
+  const notifColor =
+    notifPerm === "granted"
+      ? "#22C55E"
+      : notifPerm === "denied"
+        ? "#EF4444"
+        : "#F59E0B";
+
+  const notifLabel =
+    notifPerm === "granted"
+      ? "Active \u2705"
+      : notifPerm === "denied"
+        ? "Blocked \u274c"
+        : "Not set \u26a0\ufe0f";
 
   return (
     <div
@@ -295,6 +387,11 @@ const SettingsScreen: FC = () => {
         fontFamily: "'DM Sans', sans-serif",
       }}
     >
+      <BellPermissionModal
+        open={bellModalOpen}
+        onClose={() => setBellModalOpen(false)}
+      />
+
       <h2
         style={{
           fontSize: 22,
@@ -432,13 +529,142 @@ const SettingsScreen: FC = () => {
         </div>
       </div>
 
+      {/* Notifications */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>
+          {notifPerm === "granted" ? <Bell size={13} /> : <BellOff size={13} />}
+          Notifications
+        </div>
+
+        {/* Permission status pill */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 14,
+          }}
+        >
+          <span style={{ fontSize: 14, color: palette.text }}>Status</span>
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: notifColor,
+              background: `${notifColor}14`,
+              border: `1px solid ${notifColor}40`,
+              borderRadius: 20,
+              padding: "3px 10px",
+              boxShadow:
+                notifPerm === "granted"
+                  ? "0 0 8px rgba(34,197,94,0.3)"
+                  : "none",
+            }}
+          >
+            {notifLabel}
+          </span>
+        </div>
+
+        {/* Enable Timer Notifications button */}
+        <button
+          type="button"
+          data-ocid="settings.notifications.primary_button"
+          onClick={handleEnableNotifications}
+          style={{
+            width: "100%",
+            padding: "11px 16px",
+            borderRadius: 12,
+            border:
+              notifPerm === "granted"
+                ? "1px solid rgba(34,197,94,0.4)"
+                : notifPerm === "denied"
+                  ? "1px solid rgba(239,68,68,0.4)"
+                  : `1px solid ${palette.accent}50`,
+            background:
+              notifPerm === "granted"
+                ? "rgba(34,197,94,0.08)"
+                : notifPerm === "denied"
+                  ? "rgba(239,68,68,0.08)"
+                  : `${palette.accent}14`,
+            color:
+              notifPerm === "granted"
+                ? "#22C55E"
+                : notifPerm === "denied"
+                  ? "#EF4444"
+                  : palette.accent,
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 10,
+            transition: "all 0.2s",
+          }}
+        >
+          <Bell size={15} />
+          {notifPerm === "granted"
+            ? "Notifications Enabled \u2705"
+            : notifPerm === "denied"
+              ? "Enable in Phone Settings"
+              : "Enable Timer Notifications"}
+        </button>
+
+        {/* Test Notification button */}
+        <button
+          type="button"
+          data-ocid="settings.notifications.secondary_button"
+          onClick={handleTestNotification}
+          disabled={testNotifCountdown !== null}
+          style={{
+            width: "100%",
+            padding: "11px 16px",
+            borderRadius: 12,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.05)",
+            color: testNotifCountdown !== null ? "#F59E0B" : palette.text,
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: testNotifCountdown !== null ? "not-allowed" : "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            opacity: testNotifCountdown !== null ? 0.85 : 1,
+            transition: "all 0.2s",
+          }}
+        >
+          <Bell size={15} />
+          {testNotifCountdown !== null
+            ? `Testing in ${testNotifCountdown}s\u2026`
+            : "Test Notification (5s delay)"}
+        </button>
+
+        {notifPerm === "denied" && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.2)",
+              fontSize: 12,
+              color: "rgba(239,68,68,0.9)",
+              lineHeight: 1.5,
+            }}
+          >
+            Notifications are blocked. Tap \u201cEnable in Phone Settings\u201d
+            above for instructions.
+          </div>
+        )}
+      </div>
+
       {/* Data Management — Monarch Storage */}
       <div style={sectionStyle}>
         <div style={labelStyle}>
-          <HardDrive size={13} /> Data Management
+          <FolderOpen size={13} /> Data Management
         </div>
 
-        {/* Backup status row */}
+        {/* Sync status row */}
         <div
           style={{
             display: "flex",
@@ -451,29 +677,48 @@ const SettingsScreen: FC = () => {
             border: "1px solid rgba(255,255,255,0.08)",
           }}
         >
-          <HardDrive
-            size={16}
-            color={backupStatusColor}
-            style={{
-              filter:
-                status === "saved"
-                  ? "drop-shadow(0 0 6px rgba(34,197,94,0.8))"
-                  : undefined,
-              transition: "color 0.4s, filter 0.4s",
-              flexShrink: 0,
-            }}
-          />
+          {folderLinked ? (
+            <FolderOpen
+              size={16}
+              color={backupStatusColor}
+              style={{
+                filter:
+                  status === "saved"
+                    ? "drop-shadow(0 0 6px rgba(34,197,94,0.8))"
+                    : undefined,
+                transition: "color 0.4s, filter 0.4s",
+                flexShrink: 0,
+              }}
+            />
+          ) : (
+            <WifiOff size={16} color="#EF4444" style={{ flexShrink: 0 }} />
+          )}
           <span style={{ fontSize: 13, color: palette.text, flex: 1 }}>
-            Monarch Storage
+            {folderLinked ? (
+              <>
+                Master Folder:{" "}
+                <strong
+                  style={{
+                    color: "#FFFFFF",
+                    fontWeight: 700,
+                    fontSize: 13,
+                  }}
+                >
+                  {currentFolderName || "(linked)"}
+                </strong>
+              </>
+            ) : (
+              "No Folder Linked"
+            )}
           </span>
           <span
             style={{
               fontSize: 11,
-              color: backupStatusColor,
+              color: folderLinked ? backupStatusColor : "#EF4444",
               fontWeight: 600,
             }}
           >
-            {backupStatusLabel}
+            {folderLinked ? backupStatusLabel : "Disconnected"}
           </span>
         </div>
 
@@ -514,9 +759,8 @@ const SettingsScreen: FC = () => {
                 animation: refreshing ? "spin 0.6s linear infinite" : "none",
               }}
             />
-            {refreshing ? "Saving…" : "Refresh & Sync"}
+            {refreshing ? "Saving\u2026" : "Refresh & Sync"}
           </button>
-          {/* Saved checkmark badge */}
           {(status === "saved" || status === "idle") && !refreshing && (
             <div
               data-ocid="settings.monarch.success_state"
@@ -539,23 +783,99 @@ const SettingsScreen: FC = () => {
           )}
         </div>
 
-        {/* Link File */}
-        {isFileSystemSupported() && (
+        {/* Select Folder button */}
+        {isFolderSystemSupported() && (
           <button
             type="button"
             data-ocid="settings.monarch.link_button"
-            onClick={handleLinkFile}
+            onClick={handleSelectFolder}
             style={{
               width: "100%",
               padding: "11px 16px",
               borderRadius: 12,
-              border: fileLinked
-                ? "1px solid rgba(34,197,94,0.4)"
+              border: folderLinked
+                ? "1.5px solid rgba(34,197,94,0.5)"
                 : `1px solid ${palette.accent}40`,
-              background: fileLinked
-                ? "rgba(34,197,94,0.08)"
+              background: folderLinked
+                ? "rgba(34,197,94,0.10)"
                 : `${palette.accent}0C`,
-              color: fileLinked ? "#22C55E" : palette.accent,
+              color: folderLinked ? "#22C55E" : palette.accent,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: folderLinked ? 6 : 10,
+              transition: "all 0.2s",
+              boxShadow: folderLinked
+                ? "0 0 14px rgba(34,197,94,0.25), inset 0 0 0 1px rgba(34,197,94,0.2)"
+                : "none",
+            }}
+          >
+            <FolderOpen size={15} />
+            {folderLinked ? "Re-select Folder" : "Select Folder"}
+          </button>
+        )}
+
+        {/* Folder path display */}
+        {folderLinked && currentFolderName && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              marginBottom: 10,
+              padding: "8px 12px",
+              borderRadius: 10,
+              background: "rgba(34,197,94,0.06)",
+              border: "1px solid rgba(34,197,94,0.15)",
+            }}
+          >
+            <FolderOpen size={13} color="#22C55E" style={{ flexShrink: 0 }} />
+            <span
+              style={{
+                fontSize: 14,
+                fontWeight: 700,
+                color: "#FFFFFF",
+                letterSpacing: "0.01em",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {currentFolderName}
+            </span>
+          </div>
+        )}
+
+        {!isFolderSystemSupported() && (
+          <p
+            style={{
+              fontSize: 12,
+              color: palette.textMuted,
+              marginBottom: 12,
+              lineHeight: 1.5,
+            }}
+          >
+            Folder picker is not supported in this browser. Use Export/Import
+            below to back up your data manually.
+          </p>
+        )}
+
+        {/* Test Connection button */}
+        {folderLinked && (
+          <button
+            type="button"
+            data-ocid="settings.monarch.secondary_button"
+            onClick={handleTestConnection}
+            style={{
+              width: "100%",
+              padding: "11px 16px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.05)",
+              color: palette.text,
               fontSize: 14,
               fontWeight: 600,
               cursor: "pointer",
@@ -566,25 +886,32 @@ const SettingsScreen: FC = () => {
               transition: "all 0.2s",
             }}
           >
-            <Link2 size={15} />
-            {fileLinked
-              ? "Re-link File (naksha_data.json)"
-              : "Link File (naksha_data.json)"}
+            <CheckCircle size={15} />
+            Test Connection
           </button>
         )}
 
-        {!isFileSystemSupported() && (
-          <p
+        {/* Test result toast */}
+        {testResult && (
+          <div
+            data-ocid="settings.monarch.success_state"
             style={{
+              marginBottom: 10,
+              padding: "8px 12px",
+              borderRadius: 8,
+              background: testResult.startsWith("\u274c")
+                ? "rgba(239,68,68,0.10)"
+                : "rgba(34,197,94,0.10)",
+              border: testResult.startsWith("\u274c")
+                ? "1px solid rgba(239,68,68,0.3)"
+                : "1px solid rgba(34,197,94,0.3)",
               fontSize: 12,
-              color: palette.textMuted,
-              marginBottom: 12,
-              lineHeight: 1.5,
+              color: testResult.startsWith("\u274c") ? "#EF4444" : "#22C55E",
+              lineHeight: 1.4,
             }}
           >
-            File System API is not supported in this browser. Use Export/Import
-            below to back up your data manually.
-          </p>
+            {testResult}
+          </div>
         )}
 
         {/* Export / Import row */}
@@ -659,63 +986,7 @@ const SettingsScreen: FC = () => {
         )}
       </div>
 
-      {/* Notifications */}
-      <div style={sectionStyle}>
-        <div style={labelStyle}>
-          {notifPerm === "granted" ? <Bell size={13} /> : <BellOff size={13} />}
-          Notifications
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: notifPerm !== "granted" ? 10 : 0,
-          }}
-        >
-          <span style={{ fontSize: 14, color: palette.text }}>
-            Status:{" "}
-            <strong
-              style={{
-                color:
-                  notifPerm === "granted"
-                    ? "#22C55E"
-                    : notifPerm === "denied"
-                      ? "#EF4444"
-                      : "#F59E0B",
-              }}
-            >
-              {notifPerm}
-            </strong>
-          </span>
-        </div>
-        {notifPerm !== "granted" && notifPerm !== "denied" && (
-          <button
-            type="button"
-            data-ocid="settings.notifications.primary_button"
-            onClick={handleNotifRequest}
-            style={{
-              padding: "10px 20px",
-              borderRadius: 50,
-              border: `1px solid ${palette.accent}50`,
-              background: `${palette.accent}14`,
-              color: palette.accent,
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            Grant Permission
-          </button>
-        )}
-        {notifPerm === "denied" && (
-          <p style={{ fontSize: 13, color: "#EF4444", margin: 0 }}>
-            Notifications blocked. Please enable in browser settings.
-          </p>
-        )}
-      </div>
-
-      {/* Storage */}
+      {/* Browser Storage */}
       <div style={sectionStyle}>
         <div style={labelStyle}>
           <Database size={13} /> Browser Storage
@@ -861,7 +1132,7 @@ const SettingsScreen: FC = () => {
               marginBottom: 12,
             }}
           >
-            ✨ Living Space
+            \u2728 Living Space
           </div>
           {toggleRow(
             "Stars",
@@ -916,13 +1187,13 @@ const SettingsScreen: FC = () => {
             margin: "0 0 4px",
           }}
         >
-          Naksha 🧭
+          Naksha \ud83e\uddedF
         </h3>
         <p style={{ fontSize: 13, color: palette.accent, margin: "0 0 4px" }}>
-          Your Time. Your Orbit. 🪐
+          Your Time. Your Orbit. \ud83e\ude90
         </p>
         <p style={{ fontSize: 12, color: palette.textMuted, margin: 0 }}>
-          Version 1.8.0
+          Version 1.9.0
         </p>
       </div>
     </div>
