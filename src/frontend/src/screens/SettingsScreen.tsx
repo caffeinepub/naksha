@@ -11,6 +11,7 @@ import {
   Info,
   Palette,
   RefreshCw,
+  Shield,
   Star,
   Upload,
   User,
@@ -35,6 +36,7 @@ import {
 } from "../utils/monarchStorage";
 import { PALETTES } from "../utils/palettes";
 import { getUsername, setUsername } from "../utils/storage";
+import PermissionManagerScreen from "./PermissionManagerScreen";
 
 const SettingsScreen: FC = () => {
   const { paletteId, palette, setPalette } = usePalette();
@@ -53,6 +55,7 @@ const SettingsScreen: FC = () => {
   const [testResult, setTestResult] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [bellModalOpen, setBellModalOpen] = useState(false);
+  const [showPermManager, setShowPermManager] = useState(false);
   const [testNotifCountdown, setTestNotifCountdown] = useState<number | null>(
     null,
   );
@@ -126,15 +129,10 @@ const SettingsScreen: FC = () => {
             type: "TEST_NOTIFICATION",
           });
         } else {
-          // Fallback: fire directly
-          if (
-            "Notification" in window &&
-            Notification.permission === "granted"
-          ) {
-            new Notification("Naksha \ud83d\udd14 Test Notification", {
-              body: "Notifications are working correctly! Your timer will appear here.",
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ...("vibrate" in navigator ? { vibrate: [200, 100, 200] } : {}),
+          // SW not yet controlling — wait for it and retry once
+          if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.ready.then((reg) => {
+              reg.active?.postMessage({ type: "TEST_NOTIFICATION" });
             });
           }
         }
@@ -656,6 +654,31 @@ const SettingsScreen: FC = () => {
             above for instructions.
           </div>
         )}
+
+        {/* Permission Manager button */}
+        <button
+          type="button"
+          data-ocid="settings.permissions.button"
+          onClick={() => setShowPermManager(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 10,
+            padding: "10px 14px",
+            color: "rgba(255,255,255,0.7)",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            width: "100%",
+            marginTop: 8,
+          }}
+        >
+          <Shield size={15} />
+          Permission Manager
+        </button>
       </div>
 
       {/* Data Management — Monarch Storage */}
@@ -1196,6 +1219,10 @@ const SettingsScreen: FC = () => {
           Version 1.9.0
         </p>
       </div>
+
+      {showPermManager && (
+        <PermissionManagerScreen onDismiss={() => setShowPermManager(false)} />
+      )}
     </div>
   );
 };

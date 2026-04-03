@@ -10,11 +10,13 @@ import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { useTimer } from "./hooks/useTimer";
 import DashboardScreen from "./screens/DashboardScreen";
 import HomeScreen from "./screens/HomeScreen";
+import PermissionManagerScreen from "./screens/PermissionManagerScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import TimerScreen from "./screens/TimerScreen";
 import TodoScreen from "./screens/TodoScreen";
 import TopicsScreen from "./screens/TopicsScreen";
 import type { TabId, Topic } from "./types";
+import { PREF_KEYS, Preferences } from "./utils/preferences";
 import { getUsername } from "./utils/storage";
 
 /** Bell icon in top-left showing notification permission status */
@@ -367,6 +369,7 @@ function AppInner() {
   const [showOnboarding, setShowOnboarding] = useState(!getUsername());
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [dataReady, setDataReady] = useState(false);
+  const [showPermManager, setShowPermManager] = useState(false);
 
   const { palette } = useTheme();
   const { appearance } = useAppearance();
@@ -391,6 +394,12 @@ function AppInner() {
     if ("storage" in navigator && "persist" in navigator.storage) {
       navigator.storage.persist().catch(() => {});
     }
+    // Show Permission Manager on first launch (after onboarding)
+    Preferences.get({ key: PREF_KEYS.permissionsAsked }).then(({ value }) => {
+      if (!value && getUsername()) {
+        setShowPermManager(true);
+      }
+    });
   }, []);
 
   const handleComplete = useCallback((_actualMs: number) => {
@@ -495,6 +504,11 @@ function AppInner() {
       )}
 
       <div style={{ position: "relative", zIndex: 1 }}>
+        {showPermManager && !showOnboarding && (
+          <PermissionManagerScreen
+            onDismiss={() => setShowPermManager(false)}
+          />
+        )}
         {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
         <NotificationBanner timerRunning={timer.isRunning || timer.isPaused} />
         <BellStatusIcon />

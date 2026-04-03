@@ -10,6 +10,7 @@ import type {
   Todo,
   Topic,
 } from "../types";
+import { PREF_KEYS, Preferences } from "./preferences";
 
 const KEYS = {
   username: "nk_username",
@@ -52,6 +53,7 @@ export function getUsername(): string | null {
 export function setUsername(name: string): void {
   try {
     localStorage.setItem(KEYS.username, name);
+    Preferences.set({ key: PREF_KEYS.username, value: name }).catch(() => {});
   } catch {}
 }
 
@@ -161,6 +163,9 @@ export function getTheme(): PaletteId {
 }
 export function saveTheme(theme: PaletteId): void {
   set(KEYS.theme, theme);
+  Preferences.set({ key: PREF_KEYS.theme, value: JSON.stringify(theme) }).catch(
+    () => {},
+  );
 }
 
 const DEFAULT_APPEARANCE: AppearanceSettings = {

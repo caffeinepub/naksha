@@ -1,48 +1,131 @@
-/* Naksha Service Worker — v5 */
-const CACHE_NAME = 'naksha-v5';
-const ASSETS_TO_CACHE = ['/', '/index.html', '/manifest.json'];
+/* Naksha Service Worker — v11 (Workbox-compatible offline cache + background notifications) */
+
+const CACHE_NAME = 'naksha-v11';
+
+// App shell: files always needed to render the app
+const PRECACHE_ASSETS = [
+  '/',
+  '/index.html',
+  '/manifest.json',
+];
+
+// ────────────────────────────────────────────────
+// INSTALL — precache app shell
+// ────────────────────────────────────────────────
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      // Precache shell. Errors on individual assets are swallowed so
+      // install always succeeds even if icons are missing.
+      return Promise.allSettled(
+        PRECACHE_ASSETS.map((url) =>
+          cache.add(url).catch(() => {})
+        )
+      );
+    })
+  );
+  self.skipWaiting();
+});
+
+// ────────────────────────────────────────────────
+// ACTIVATE — purge old caches
+// ────────────────────────────────────────────────
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+        )
+      )
+  );
+  self.clients.claim();
+});
+
+// ────────────────────────────────────────────────
+// FETCH — Workbox-style routing strategy
+//
+// Navigation requests (HTML pages)  → Network-first, cache fallback
+// Static assets (JS/CSS/fonts/img)  → Cache-first, network fallback
+// API / non-GET                     → Pass through
+// ────────────────────────────────────────────────
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (request.method !== 'GET') return;
+
+  const url = new URL(request.url);
+
+  // Skip cross-origin requests (ICP API, auth, etc.)
+  if (url.origin !== self.location.origin) return;
+
+  // Skip ICP API paths
+  if (url.pathname.startsWith('/api/')) return;
+
+  const isNavigation = request.mode === 'navigate';
+  const isStaticAsset =
+    url.pathname.match(/\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|ico|webp|json)$/i);
+
+  if (isNavigation) {
+    // Network-first for HTML so users always get fresh content when online
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() =>
+          caches.match(request).then((cached) => cached || caches.match('/index.html'))
+        )
+    );
+    return;
+  }
+
+  if (isStaticAsset) {
+    // Cache-first for static assets — instant loads offline
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          if (response && response.status === 200 && response.type !== 'opaque') {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Default: network with cache fallback
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        if (response && response.status === 200 && response.type === 'basic') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
+  );
+});
+
+
+// ────────────────────────────────────────────────
+// TIMER STATE + BACKGROUND NOTIFICATIONS
+// (logic unchanged from v5, kept fully intact)
+// ────────────────────────────────────────────────
 
 let timerInterval = null;
 let notificationInterval = null;
 let timerData = null;
 let scheduledAlarms = {};
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE).catch(() => {});
-    })
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request).then((response) => {
-        if (response && response.status === 200 && response.type === 'basic') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      }).catch(() => cached);
-    })
-  );
-});
-
-/**
- * Format milliseconds as MM:SS with NaN guard
- */
 function formatTime(ms) {
   if (!ms || isNaN(ms) || ms <= 0) return '00:00';
   const totalSec = Math.floor(ms / 1000);
@@ -88,7 +171,6 @@ async function updateNotification() {
   const elapsed = getElapsed();
   const total = timerData.totalDuration || 0;
 
-  // NaN guards on all displayed values
   const safeRemaining = isNaN(remaining) ? 0 : Math.max(0, remaining);
   const safeElapsed = isNaN(elapsed) ? 0 : Math.max(0, elapsed);
   const safeTotal = isNaN(total) || total <= 0 ? 1 : total;
@@ -102,7 +184,6 @@ async function updateNotification() {
     ? `\u23f8 Paused \u2014 ${timeStr} remaining`
     : `${progressBar} ${pct}% \u2014 ${timeStr} remaining`;
 
-  // Pause/Resume actions based on timer state
   const actions = timerData.isPaused
     ? [{ action: 'resume', title: '\u25b6 Resume' }, { action: 'stop', title: '\u23f9 Stop' }]
     : [{ action: 'pause', title: '\u23f8 Pause' }, { action: 'stop', title: '\u23f9 Stop' }];
@@ -110,6 +191,9 @@ async function updateNotification() {
   const notifications = await self.registration.getNotifications({ tag: 'naksha-timer' });
   notifications.forEach((n) => n.close());
 
+  // Android requires showNotification inside the service worker
+  // (self.registration.showNotification) — this is the only way
+  // background notifications work in Android WebView/Capacitor.
   await self.registration.showNotification(`Naksha \u23f1 ${topic}`, {
     body,
     tag: 'naksha-timer',
@@ -131,10 +215,8 @@ self.addEventListener('message', async (event) => {
     clearInterval(timerInterval);
 
     updateNotification();
-    // Update notification every 60 seconds
     notificationInterval = setInterval(updateNotification, 60000);
 
-    // 10-minute milestone beeps
     let minuteCount = 0;
     timerInterval = setInterval(() => {
       minuteCount++;
@@ -169,21 +251,22 @@ self.addEventListener('message', async (event) => {
     timerData = null;
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
-    self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
+    self.registration
+      .getNotifications({ tag: 'naksha-timer' })
+      .then((ns) => ns.forEach((n) => n.close()));
   }
 
   if (type === 'TIMER_UPDATE') {
-    if (timerData) {
-      timerData = { ...timerData, ...payload };
-    }
+    if (timerData) timerData = { ...timerData, ...payload };
   }
 
   if (type === 'TIMER_COMPLETE') {
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
     timerData = null;
-    // Close existing timer notifications
-    self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
+    self.registration
+      .getNotifications({ tag: 'naksha-timer' })
+      .then((ns) => ns.forEach((n) => n.close()));
 
     await self.registration.showNotification('Naksha \u23f1 Session Complete! \ud83c\udf89', {
       body: 'Great work! Your study session is done.',
@@ -234,7 +317,6 @@ self.addEventListener('message', async (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  // Pause action
   if (event.action === 'pause') {
     if (timerData) {
       timerData.isPaused = true;
@@ -247,7 +329,6 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
-  // Resume action
   if (event.action === 'resume') {
     if (timerData) {
       timerData.isPaused = false;
@@ -260,7 +341,6 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
-  // Stop action
   if (event.action === 'stop') {
     timerData = null;
     clearInterval(notificationInterval);
@@ -271,15 +351,16 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
-  // Tap on notification body — focus/open the app
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      if (clients.length > 0) {
-        clients[0].focus();
-      } else {
-        self.clients.openWindow('/');
-      }
-    })
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clients) => {
+        if (clients.length > 0) {
+          clients[0].focus();
+        } else {
+          self.clients.openWindow('/');
+        }
+      })
   );
 });
 

@@ -3,7 +3,9 @@
  * Falls back to localStorage gracefully on unsupported browsers.
  */
 
+import { isDirectoryPickerAvailable } from "./fileDownload";
 import { getDirHandle, saveDirHandle, saveSnapshotIDB } from "./indexedDB";
+import { PREF_KEYS, Preferences } from "./preferences";
 import {
   getAppearance,
   getChapters,
@@ -44,6 +46,9 @@ export function getFolderName(): string {
 
 /** Ask user to pick a folder. Returns true on success. */
 export async function selectFolder(): Promise<boolean> {
+  if (!isDirectoryPickerAvailable()) {
+    return false;
+  }
   if (!isFolderSystemSupported()) return false;
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,6 +92,9 @@ export async function tryRelinkFolder(): Promise<
     if (permission === "granted") {
       dirHandle = stored;
       folderName = stored.name;
+      Preferences.set({ key: PREF_KEYS.folderName, value: stored.name }).catch(
+        () => {},
+      );
       return "linked";
     }
 
@@ -96,6 +104,10 @@ export async function tryRelinkFolder(): Promise<
         if (result === "granted") {
           dirHandle = stored;
           folderName = stored.name;
+          Preferences.set({
+            key: PREF_KEYS.folderName,
+            value: stored.name,
+          }).catch(() => {});
           return "linked";
         }
       } catch {
@@ -176,6 +188,10 @@ export async function syncToFolder(
     await writable.write(JSON.stringify(snap, null, 2));
     await writable.close();
     onStatus?.("saved");
+    // Persist folder name to Preferences (fire-and-forget) so it survives Android WebView restarts
+    Preferences.set({ key: PREF_KEYS.folderName, value: folderName }).catch(
+      () => {},
+    );
     // Dual-write to IDB (fire-and-forget)
     saveSnapshotIDB(snap).catch(() => {});
   } catch (e) {
