@@ -9,9 +9,28 @@ import { isCapacitorNative } from "./capacitorStorage";
 const TIMER_NOTIF_ID = 9999;
 const CHANNEL_ID = "naksha-timer";
 
+/** Module-level guard so we only request once per session */
+let permRequested = false;
+
 /** Dynamic import that bypasses TypeScript module resolution checks */
 async function dynamicImport(pkg: string): Promise<any> {
   return new Function("p", "return import(p)")(pkg);
+}
+
+/**
+ * Request notification permissions lazily — called on first meaningful
+ * interaction (e.g. when user starts a timer). Only fires once per session.
+ * Returns true if granted.
+ */
+export async function ensureNotificationPermissionOnce(): Promise<boolean> {
+  if (permRequested) {
+    // Already asked this session — check current state
+    if (isCapacitorNative()) return true; // assume granted on native if already asked
+    if ("Notification" in window) return Notification.permission === "granted";
+    return false;
+  }
+  permRequested = true;
+  return requestNotificationPermissions();
 }
 
 /**

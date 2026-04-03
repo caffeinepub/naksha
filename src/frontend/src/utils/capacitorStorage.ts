@@ -24,7 +24,30 @@ async function dynamicImport(pkg: string): Promise<any> {
 }
 
 /**
- * Write a string to the Android Documents directory.
+ * Ensure the NakshaData directory exists under Documents.
+ * On native: calls Filesystem.mkdir({ path: 'NakshaData', directory: Directory.Documents }).
+ * On web: no-op.
+ */
+export async function ensureNakshaDataDir(): Promise<void> {
+  if (!isCapacitorNative()) return;
+  try {
+    const { Filesystem, Directory } = await dynamicImport(
+      "@capacitor/filesystem",
+    );
+    await Filesystem.mkdir({
+      path: "NakshaData",
+      directory: Directory.Documents,
+      recursive: true,
+    });
+  } catch (e: any) {
+    // Ignore DIRECTORY_EXISTS errors — that's fine
+    if (e?.message?.includes("Directory exists")) return;
+    console.warn("[CapStorage] ensureNakshaDataDir error:", e);
+  }
+}
+
+/**
+ * Write a string to the Android Documents/NakshaData directory.
  * Falls back to a Blob download on web.
  */
 export async function saveToDocuments(
@@ -37,7 +60,7 @@ export async function saveToDocuments(
         "@capacitor/filesystem",
       );
       await Filesystem.writeFile({
-        path: filename,
+        path: `NakshaData/${filename}`,
         data,
         directory: Directory.Documents,
         encoding: Encoding.UTF8,
@@ -67,7 +90,7 @@ export async function saveToDocuments(
 }
 
 /**
- * Read a file from the Android Documents directory.
+ * Read a file from the Android Documents/NakshaData directory.
  * Returns null on web or if the file doesn't exist.
  */
 export async function readFromDocuments(
@@ -79,7 +102,7 @@ export async function readFromDocuments(
       "@capacitor/filesystem",
     );
     const result = await Filesystem.readFile({
-      path: filename,
+      path: `NakshaData/${filename}`,
       directory: Directory.Documents,
       encoding: Encoding.UTF8,
     });

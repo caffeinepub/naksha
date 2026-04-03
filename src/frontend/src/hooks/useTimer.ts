@@ -9,6 +9,7 @@ import {
 } from "../utils/audio";
 import {
   cancelTimerNotification,
+  ensureNotificationPermissionOnce,
   scheduleTimerCompleteNotification,
 } from "../utils/capacitorNotifications";
 import { clearTimerStateIDB, saveTimerStateIDB } from "../utils/indexedDB";
@@ -169,6 +170,8 @@ export function useTimer(onComplete: (actualMs: number) => void) {
         },
       });
       // Schedule a precise Capacitor notification for when the timer ends
+      // Request permission lazily on first interaction
+      ensureNotificationPermissionOnce().catch(() => {});
       cancelTimerNotification();
       scheduleTimerCompleteNotification(topic, durationMs);
     },

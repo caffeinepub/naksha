@@ -1,4 +1,4 @@
-import { Bell, BellOff, FolderOpen, RefreshCw, WifiOff } from "lucide-react";
+import { Bell, BellOff, RefreshCw, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import BottomNav from "./components/BottomNav";
 import NotificationBanner from "./components/NotificationBanner";
@@ -16,27 +16,81 @@ import TimerScreen from "./screens/TimerScreen";
 import TodoScreen from "./screens/TodoScreen";
 import TopicsScreen from "./screens/TopicsScreen";
 import type { TabId, Topic } from "./types";
+import { ensureNotificationPermissionOnce } from "./utils/capacitorNotifications";
+import { ensureNakshaDataDir } from "./utils/capacitorStorage";
 import { PREF_KEYS, Preferences } from "./utils/preferences";
 import { getUsername } from "./utils/storage";
 
 /**
- * Safe-area-aware top offset for fixed overlay elements.
- * On phones with a camera notch this evaluates to the notch height;
- * on flat-screen phones it falls back to the provided base value.
+ * Slim header bar at the very top of the app.
+ * Shows app name on the left; sync icon on the right ONLY while saving.
  */
-function safeTop(base: number): string {
-  return `max(${base}px, calc(env(safe-area-inset-top) + ${base}px))`;
+function HeaderBar() {
+  const { status } = useBackup();
+  const { palette } = useTheme();
+  const isSaving = status === "saving";
+
+  return (
+    <div
+      style={{
+        height: 44,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingLeft: 16,
+        paddingRight: 16,
+        paddingTop: "env(safe-area-inset-top)",
+        background: "rgba(0,0,0,0.3)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        borderBottom: "1px solid rgba(255,255,255,0.05)",
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: palette.textMuted ?? "rgba(255,255,255,0.45)",
+          letterSpacing: "0.02em",
+        }}
+      >
+        Naksha &#x1F9ED;
+      </span>
+
+      {/* Sync icon — only appears when saving */}
+      <div
+        style={{
+          opacity: isSaving ? 1 : 0,
+          transition: "opacity 0.3s ease",
+          pointerEvents: "none",
+          display: "flex",
+          alignItems: "center",
+        }}
+        aria-hidden={!isSaving}
+      >
+        <RefreshCw
+          size={18}
+          color="var(--accent)"
+          style={{ animation: isSaving ? "spin 0.6s linear infinite" : "none" }}
+        />
+      </div>
+    </div>
+  );
 }
 
-/** Bell icon in top-left showing notification permission status */
-function BellStatusIcon() {
+/**
+ * Status bar above BottomNav — compact, non-fixed.
+ * Shows notification status on the left and folder/storage status on the right.
+ */
+function AppStatusBar() {
   const [perm, setPerm] = useState<NotificationPermission>("default");
+  const { folderLinked, folderName } = useBackup();
 
   useEffect(() => {
     if ("Notification" in window) setPerm(Notification.permission);
   }, []);
 
-  // Poll every 3 seconds to detect permission changes
   useEffect(() => {
     const interval = setInterval(() => {
       if ("Notification" in window) setPerm(Notification.permission);
@@ -44,246 +98,120 @@ function BellStatusIcon() {
     return () => clearInterval(interval);
   }, []);
 
+  const handleBellTap = async () => {
+    await ensureNotificationPermissionOnce();
+    if ("Notification" in window) setPerm(Notification.permission);
+  };
+
   const isDenied = perm === "denied";
   const isGranted = perm === "granted";
-
-  const iconColor = isDenied
+  const bellColor = isDenied
     ? "#EF4444"
     : isGranted
       ? "#22C55E"
       : "rgba(255,255,255,0.35)";
 
-  const pillBg = isDenied
-    ? "rgba(239,68,68,0.08)"
-    : isGranted
-      ? "rgba(34,197,94,0.08)"
-      : "rgba(255,255,255,0.05)";
-
-  const pillBorder = isDenied
-    ? "1px solid rgba(239,68,68,0.25)"
-    : isGranted
-      ? "1px solid rgba(34,197,94,0.2)"
-      : "1px solid rgba(255,255,255,0.10)";
-
-  const glow = isGranted
-    ? "0 0 10px rgba(34,197,94,0.5)"
-    : isDenied
-      ? "0 0 8px rgba(239,68,68,0.35)"
-      : "none";
+  const displayFolder = folderName
+    ? folderName.slice(0, 14) + (folderName.length > 14 ? "\u2026" : "")
+    : "NakshaData";
 
   return (
     <div
+      data-ocid="app.status_bar"
       style={{
-        position: "fixed",
-        top: safeTop(10),
-        left: 16,
-        zIndex: 200,
+        height: 36,
         display: "flex",
         alignItems: "center",
-        gap: 5,
-        background: pillBg,
-        border: pillBorder,
-        borderRadius: 20,
-        padding: "5px 9px",
-        pointerEvents: "none",
-        transition: "all 0.4s",
-      }}
-      title={`Notifications: ${perm}`}
-    >
-      {isDenied ? (
-        <BellOff
-          size={13}
-          color={iconColor}
-          style={{
-            filter: glow !== "none" ? `drop-shadow(${glow})` : undefined,
-            flexShrink: 0,
-          }}
-        />
-      ) : (
-        <Bell
-          size={13}
-          color={iconColor}
-          style={{
-            filter: glow !== "none" ? `drop-shadow(${glow})` : undefined,
-            flexShrink: 0,
-            animation: isGranted
-              ? "bellPulse 2.5s ease-in-out infinite"
-              : "none",
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Storage status badge in top-right */
-function StorageStatusBadge() {
-  const {
-    status,
-    folderLinked,
-    folderName,
-    linkFolderAndSync,
-    triggerFullSync,
-  } = useBackup();
-  const [pulse, setPulse] = useState(false);
-  const [showSpin, setShowSpin] = useState(false);
-  const prevStatusRef = useRef<string>(status);
-
-  useEffect(() => {
-    if (status === "saving") {
-      setShowSpin(true);
-    } else if (prevStatusRef.current === "saving" && status === "saved") {
-      setPulse(true);
-      // Keep spin visible for 1 second after save
-      const spinTimer = setTimeout(() => setShowSpin(false), 1000);
-      const pulseTimer = setTimeout(() => setPulse(false), 800);
-      return () => {
-        clearTimeout(spinTimer);
-        clearTimeout(pulseTimer);
-      };
-    } else {
-      setShowSpin(false);
-    }
-    prevStatusRef.current = status;
-  }, [status]);
-
-  const handleClick = () => {
-    if (!folderLinked) {
-      linkFolderAndSync();
-    } else {
-      triggerFullSync();
-    }
-  };
-
-  // Disconnected state
-  if (!folderLinked) {
-    return (
-      <button
-        type="button"
-        onClick={handleClick}
-        title="Select a folder to enable auto-save"
-        data-ocid="backup.toggle"
-        style={{
-          position: "fixed",
-          top: safeTop(10),
-          right: 16,
-          zIndex: 200,
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          background: "rgba(239,68,68,0.08)",
-          border: "1px solid rgba(239,68,68,0.25)",
-          borderRadius: 20,
-          padding: "5px 10px",
-          cursor: "pointer",
-          outline: "none",
-          WebkitTapHighlightColor: "transparent",
-          transition: "all 0.3s",
-        }}
-      >
-        <WifiOff size={12} color="#EF4444" style={{ flexShrink: 0 }} />
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: "#EF4444",
-            whiteSpace: "nowrap",
-            letterSpacing: "0.03em",
-          }}
-        >
-          No Folder Linked
-        </span>
-      </button>
-    );
-  }
-
-  // Connected / syncing
-  const displayName =
-    folderName.length > 12 ? `${folderName.slice(0, 12)}\u2026` : folderName;
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        top: safeTop(10),
-        right: 16,
-        zIndex: 200,
-        display: "flex",
-        alignItems: "center",
-        gap: 5,
+        justifyContent: "space-between",
+        paddingLeft: 16,
+        paddingRight: 16,
+        background: "rgba(0,0,0,0.4)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        borderTop: "1px solid rgba(255,255,255,0.07)",
+        flexShrink: 0,
       }}
     >
-      {/* Saved pulse label */}
-      {pulse && (
-        <div
-          style={{
-            fontSize: 10,
-            color: "#22C55E",
-            fontWeight: 700,
-            background: "rgba(34,197,94,0.12)",
-            border: "1px solid rgba(34,197,94,0.3)",
-            borderRadius: 20,
-            padding: "2px 7px",
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-          }}
-        >
-          Saved \u2713
-        </div>
-      )}
-
+      {/* Left: notification status */}
       <button
         type="button"
-        onClick={handleClick}
-        title={`Linked: ${folderName} \u2014 Click to sync`}
-        data-ocid="backup.toggle"
+        onClick={handleBellTap}
+        data-ocid="app.notifications.toggle"
         style={{
           display: "flex",
           alignItems: "center",
           gap: 5,
-          background: "rgba(34,197,94,0.08)",
-          border: "1px solid rgba(34,197,94,0.25)",
-          borderRadius: 20,
-          padding: "5px 10px",
+          background: "none",
+          border: "none",
           cursor: "pointer",
-          outline: "none",
-          WebkitTapHighlightColor: "transparent",
-          boxShadow: pulse ? "0 0 12px rgba(34,197,94,0.4)" : "none",
-          transition: "all 0.3s",
+          padding: "4px 0",
+          minHeight: 28,
         }}
+        aria-label={`Notifications: ${perm}`}
       >
-        {showSpin ? (
-          <RefreshCw
-            size={12}
-            color="#22C55E"
-            style={{
-              animation: "spin 0.6s linear infinite",
-              flexShrink: 0,
-            }}
-          />
+        {isDenied ? (
+          <BellOff size={14} color={bellColor} style={{ flexShrink: 0 }} />
         ) : (
-          <FolderOpen
-            size={12}
-            color="#22C55E"
+          <Bell
+            size={14}
+            color={bellColor}
             style={{
-              filter: "drop-shadow(0 0 5px rgba(34,197,94,0.6))",
               flexShrink: 0,
-              transition: "filter 0.3s",
+              filter: isGranted
+                ? "drop-shadow(0 0 4px rgba(34,197,94,0.7))"
+                : "none",
+              animation: isGranted
+                ? "bellPulse 2.5s ease-in-out infinite"
+                : "none",
             }}
           />
         )}
         <span
           style={{
             fontSize: 10,
-            fontWeight: 700,
-            color: "#22C55E",
-            whiteSpace: "nowrap",
+            color: bellColor,
+            fontWeight: 500,
             letterSpacing: "0.02em",
           }}
         >
-          Linked: {displayName}
+          Notifications
         </span>
       </button>
+
+      {/* Right: folder / storage status */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 5,
+        }}
+      >
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: folderLinked ? "#22C55E" : "#EF4444",
+            flexShrink: 0,
+            boxShadow: folderLinked
+              ? "0 0 6px rgba(34,197,94,0.7)"
+              : "0 0 5px rgba(239,68,68,0.5)",
+          }}
+        />
+        <span
+          style={{
+            fontSize: 10,
+            color: "rgba(255,255,255,0.45)",
+            fontWeight: 500,
+            maxWidth: 100,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {displayFolder}
+        </span>
+      </div>
     </div>
   );
 }
@@ -305,7 +233,7 @@ function FolderUnreachableAlert() {
         transform: "translateX(-50%)",
         width: "calc(100% - 32px)",
         maxWidth: 398,
-        zIndex: 300,
+        zIndex: 150,
         background:
           "linear-gradient(135deg, rgba(245,158,11,0.95) 0%, rgba(251,191,36,0.9) 100%)",
         borderRadius: 14,
@@ -366,7 +294,7 @@ function FolderUnreachableAlert() {
           padding: "0 4px",
         }}
       >
-        \u00d7
+        &times;
       </button>
     </div>
   );
@@ -397,12 +325,15 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
+    // Register service worker
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
     if ("storage" in navigator && "persist" in navigator.storage) {
       navigator.storage.persist().catch(() => {});
     }
+    // Ensure NakshaData directory exists on native
+    ensureNakshaDataDir().catch(() => {});
     // Show Permission Manager on first launch (after onboarding)
     Preferences.get({ key: PREF_KEYS.permissionsAsked }).then(({ value }) => {
       if (!value && getUsername()) {
@@ -412,7 +343,7 @@ function AppInner() {
   }, []);
 
   const handleComplete = useCallback((_actualMs: number) => {
-    // Safety net \u2014 actual save happens in TimerScreen via EnergyRatingModal
+    // Safety net — actual save happens in TimerScreen via EnergyRatingModal
   }, []);
 
   const timer = useTimer(handleComplete);
@@ -462,6 +393,8 @@ function AppInner() {
         position: "relative",
         overflow: "hidden",
         background: palette.bg,
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       {!dataReady && (
@@ -478,9 +411,9 @@ function AppInner() {
             gap: 12,
           }}
         >
-          <div style={{ fontSize: 32 }}>\ud83e\uddedF</div>
+          <div style={{ fontSize: 32 }}>&#x1F9ED;</div>
           <div style={{ color: palette.text, fontSize: 15, fontWeight: 600 }}>
-            Restoring your session\u2026
+            Restoring your session&hellip;
           </div>
           <div
             style={{
@@ -512,16 +445,28 @@ function AppInner() {
         />
       )}
 
-      <div style={{ position: "relative", zIndex: 1 }}>
+      {/* Main layout column — z-index 1 above background */}
+      <div
+        style={{
+          position: "relative",
+          zIndex: 1,
+          display: "flex",
+          flexDirection: "column",
+          flex: 1,
+          minHeight: "100vh",
+        }}
+      >
         {showPermManager && !showOnboarding && (
           <PermissionManagerScreen
             onDismiss={() => setShowPermManager(false)}
           />
         )}
         {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
+
+        {/* Slim header bar with app name + sync icon */}
+        <HeaderBar />
+
         <NotificationBanner timerRunning={timer.isRunning || timer.isPaused} />
-        <BellStatusIcon />
-        <StorageStatusBadge />
         <FolderUnreachableAlert />
         <TimerStatusBar
           timerState={timer.timerState}
@@ -531,36 +476,42 @@ function AppInner() {
 
         {timerBarVisible && <div style={{ height: 46 }} />}
 
-        {activeTab === "home" && (
-          <HomeScreen
-            username={username || ""}
-            timerState={timer.timerState}
-            remaining={timer.remaining}
-            onGoToTimer={() => setActiveTab("timer")}
-            appearance={appearance}
-          />
-        )}
-        {activeTab === "topics" && (
-          <TopicsScreen onSelectTopic={handleSelectTopic} />
-        )}
-        {activeTab === "timer" && (
-          <TimerScreen
-            selectedTopic={selectedTopic}
-            onClearTopic={handleClearTopic}
-            remaining={timer.remaining}
-            isRunning={timer.isRunning}
-            isPaused={timer.isPaused}
-            totalDuration={timer.totalDuration}
-            startTimer={timer.startTimer}
-            pauseTimer={timer.pauseTimer}
-            resumeTimer={timer.resumeTimer}
-            stopTimer={timer.stopTimer}
-            onTimerComplete={handleComplete}
-          />
-        )}
-        {activeTab === "todo" && <TodoScreen />}
-        {activeTab === "dashboard" && <DashboardScreen />}
-        {activeTab === "settings" && <SettingsScreen />}
+        {/* Main content area */}
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          {activeTab === "home" && (
+            <HomeScreen
+              username={username || ""}
+              timerState={timer.timerState}
+              remaining={timer.remaining}
+              onGoToTimer={() => setActiveTab("timer")}
+              appearance={appearance}
+            />
+          )}
+          {activeTab === "topics" && (
+            <TopicsScreen onSelectTopic={handleSelectTopic} />
+          )}
+          {activeTab === "timer" && (
+            <TimerScreen
+              selectedTopic={selectedTopic}
+              onClearTopic={handleClearTopic}
+              remaining={timer.remaining}
+              isRunning={timer.isRunning}
+              isPaused={timer.isPaused}
+              totalDuration={timer.totalDuration}
+              startTimer={timer.startTimer}
+              pauseTimer={timer.pauseTimer}
+              resumeTimer={timer.resumeTimer}
+              stopTimer={timer.stopTimer}
+              onTimerComplete={handleComplete}
+            />
+          )}
+          {activeTab === "todo" && <TodoScreen />}
+          {activeTab === "dashboard" && <DashboardScreen />}
+          {activeTab === "settings" && <SettingsScreen />}
+        </div>
+
+        {/* Status bar above bottom nav */}
+        <AppStatusBar />
 
         <BottomNav active={activeTab} onChange={setActiveTab} />
       </div>

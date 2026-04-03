@@ -1,40 +1,74 @@
-# Naksha — Capacitor Android Build (Version 12)
+# Naksha — Final Native & UI Overhaul (Version 13)
 
 ## Current State
-- React + TypeScript + Tailwind PWA running on ICP
-- Storage: File System Access API (monarchStorage.ts) + localStorage + IndexedDB
-- Notifications: Browser Notification API via Service Worker (sw.js)
-- Preferences shim (preferences.ts) mirrors @capacitor/preferences API but uses localStorage
-- `pb-safe` utility exists for bottom nav; no top safe-area CSS exists
-- No capacitor.config.json; package.json has no Capacitor dependencies
+
+- App uses `@capacitor/filesystem`, `@capacitor/local-notifications`, `@capacitor/preferences` via dynamic imports with web fallbacks
+- `capacitorStorage.ts` handles file I/O; `capacitorNotifications.ts` handles timer alerts
+- `preferences.ts` is a shim that delegates to Capacitor Preferences on native or localStorage on web
+- `monarchStorage.ts` manages the master folder/file sync (Documents dir on native, File System Access API on web)
+- `App.tsx` has `BellStatusIcon` floating fixed top-left and `StorageStatusBadge` fixed top-right — both always visible
+- `SettingsScreen.tsx` has notification buttons, folder controls, and refresh logic
+- `PermissionManagerScreen.tsx` checks/requests both notification and storage permissions on startup
+- `capacitor.config.json` already has `webDir: "www"`; this is correct
+- `BackupContext.tsx` tracks sync status and exposes `triggerSync`, `triggerFullSync`, `linkFolderAndSync`
+- No automatic `Documents/NakshaData` directory creation on startup
+- Floating bell icon is always visible top-left; notification toggle is a floating button
+- Sync icon is large and always visible even when not saving
 
 ## Requested Changes (Diff)
 
 ### Add
-- `capacitor.config.json` with appId=com.suryansh.naksha and webDir=www
-- Capacitor dependencies to `src/frontend/package.json`: @capacitor/core, @capacitor/cli, @capacitor/android, @capacitor/filesystem, @capacitor/local-notifications
-- `src/frontend/src/utils/capacitorStorage.ts` — new file wrapping @capacitor/filesystem for saving to Android Documents folder
-- `src/frontend/src/utils/capacitorNotifications.ts` — new file wrapping @capacitor/local-notifications for scheduling a notification exactly at timer end
-- `android/app/src/main/AndroidManifest.xml` — reference XML with POST_NOTIFICATIONS, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE permissions
-- `.pt-safe` CSS class in index.css for top safe area (notch/status bar)
+- Auto-create `Documents/NakshaData` directory on app launch using `Filesystem.mkdir` (via `capacitorStorage.ts`)
+- `ensureNakshaDataDir()` function that calls `Filesystem.mkdir({ path: 'NakshaData', directory: Directory.Documents, recursive: true })` on native startup
+- "Change Directory" button in Settings → Data Management that opens folder picker but defaults to NakshaData
+- Call `LocalNotifications.requestPermissions()` on first meaningful interaction (first timer start or first task creation)
+- All app state persistence routed through `@capacitor/preferences` (timer state, subjects, sessions, theme, username, etc.)
+- Sync icon in the top-right header (18px), only visible and pulsing when actively saving — hidden otherwise
+- Status bar at the bottom (above BottomNav) showing notification toggle and sync status, replacing the floating bell
 
 ### Modify
-- `src/frontend/src/utils/monarchStorage.ts` — wire capacitorStorage for syncToFolder; fall back to current File System Access API on web
-- `src/frontend/src/hooks/useTimer.ts` — on TIMER_COMPLETE, call capacitor local-notifications scheduleAsync instead of (or alongside) SW postMessage
-- `src/frontend/src/utils/preferences.ts` — try to import from @capacitor/preferences first; fall back to localStorage shim
-- `src/frontend/index.html` — ensure viewport meta has viewport-fit=cover (already present)
-- `src/frontend/src/index.css` — add `.pt-safe` and `.header-safe` utilities
+- `capacitorStorage.ts`: Add `ensureNakshaDataDir()` that creates `Documents/NakshaData` if missing; update `saveToDocuments` to write under `NakshaData/` subfolder on native
+- `App.tsx`: 
+  - Remove `BellStatusIcon` floating fixed element from top-left
+  - Move sync indicator into header area as a small 18px icon that only appears/pulses during save
+  - Remove `StorageStatusBadge` as a persistent always-on overlay
+  - Add compact `StatusBar` component at the bottom (above BottomNav) showing notification status + sync state
+  - Call `ensureNakshaDataDir()` on mount
+- `monarchStorage.ts`: Update native path to use `NakshaData/naksha_master_data.json` instead of flat `naksha_master_data.json`
+- `preferences.ts`: Ensure ALL app state keys (subjects, sessions, timer, theme, username, todos, chapters, topics, appearance) are written to Preferences on every save, not just username/theme
+- `capacitorNotifications.ts`: Ensure `LocalNotifications.requestPermissions()` is called lazily on first interaction, not just on permission manager screen
+- `SettingsScreen.tsx`: Move notification bell UI into a section (not floating), add "Change Directory" button next to "Select Folder", remove floating notification toggle reference
+- `BottomNav.tsx`: Ensure it renders above the new StatusBar or that z-index is correct
+- `capacitor.config.json`: Confirm `webDir: "www"` is set (already correct; add TS variant `capacitor.config.ts`)
 
 ### Remove
-- Nothing removed; all web/PWA code stays as fallback
+- Floating `BellStatusIcon` fixed position top-left element in `App.tsx`
+- `StorageStatusBadge` as always-on overlay — replaced by subtle header icon
+- Floating notification toggle button from left side of screen
+- Any UI elements that hover/overlay main action buttons (z-index audit)
 
 ## Implementation Plan
-1. Write `capacitor.config.json` at workspace root
-2. Add Capacitor packages to `src/frontend/package.json` dependencies
-3. Create `src/frontend/src/utils/capacitorStorage.ts` — isCapacitor() check, writeFile to Documents, readFile, helper to export/import via Capacitor Filesystem
-4. Create `src/frontend/src/utils/capacitorNotifications.ts` — scheduleTimerCompleteNotification(), cancelTimerNotification(), requestPermissions()
-5. Update `monarchStorage.ts` syncToFolder/syncToFile to branch on isCapacitor() and use capacitorStorage
-6. Update `useTimer.ts` onComplete path to call scheduleTimerCompleteNotification
-7. Update `preferences.ts` to attempt @capacitor/preferences import with localStorage fallback
-8. Add `.pt-safe`, `.header-safe` CSS utilities to index.css
-9. Create `android/app/src/main/AndroidManifest.xml` reference file
+
+1. **`capacitorStorage.ts`**: Add `ensureNakshaDataDir()` that on native calls `Filesystem.mkdir({ path: 'NakshaData', directory: Directory.Documents, recursive: true })`. Update `saveToDocuments` to prefix path with `NakshaData/` on native.
+
+2. **`monarchStorage.ts`**: Update the native `syncToFolder` path to write to `NakshaData/naksha_master_data.json`.
+
+3. **`preferences.ts`**: Add a `syncAllStateToPreferences()` helper that writes all critical state keys (subjects, sessions, timerState, todos, themes, chapters, topics, projects) to Capacitor Preferences as serialized JSON. Called from `syncToLocalAndIDB`.
+
+4. **`capacitorNotifications.ts`**: Export `ensureNotificationPermission()` that calls `LocalNotifications.requestPermissions()` lazily and caches the result. Add `firstInteractionPermissionRequest()` to call this once on first timer start/task creation.
+
+5. **`App.tsx`**:
+   - Remove `BellStatusIcon` and `StorageStatusBadge` floating elements
+   - Add `HeaderSyncIndicator` — a tiny 18px `RefreshCw` icon that appears only when `status === 'saving'`, positioned inline in a thin top header bar; hidden at all other times
+   - Add `AppStatusBar` component at bottom above BottomNav: left side shows Bell icon (grey/red/green) with tap to enable notifications; right side shows current folder name or "Linked" text in muted small font
+   - Call `ensureNakshaDataDir()` on mount
+   - Audit and remove any `position: fixed` overlays that block action buttons
+
+6. **`SettingsScreen.tsx`**:
+   - Move notification enable/test buttons into a dedicated `Notifications` section card (already a section, confirm no floating elements)
+   - Add "Change Directory" button in Data Management section
+   - Remove any reference to a floating notification toggle
+
+7. **`capacitor.config.json`**: Already correct. Also create `capacitor.config.ts` as TypeScript variant for projects that prefer it.
+
+8. **CSS/z-index audit**: Ensure BottomNav and StatusBar z-indexes don't clash; no fixed elements with z > 100 except modals/toasts.

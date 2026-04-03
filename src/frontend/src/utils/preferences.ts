@@ -111,3 +111,36 @@ export const PREF_KEYS = {
   permissionsAsked: "permissionsAsked",
   onboardingDone: "onboardingDone",
 } as const;
+
+/**
+ * Sync all critical app state from localStorage into Preferences.
+ * This ensures state survives Android WebView restarts and works 100% offline.
+ * Called after every syncToLocalAndIDB write.
+ */
+export async function syncAllStateToPreferences(): Promise<void> {
+  const keys = [
+    "nk_subjects",
+    "nk_chapters",
+    "nk_topics",
+    "nk_todos",
+    "nk_sessions",
+    "nk_timerState",
+    "nk_theme",
+    "nk_username",
+    "nk_appearance",
+    "nk_projects",
+  ];
+
+  await Promise.all(
+    keys.map(async (lsKey) => {
+      try {
+        const raw = localStorage.getItem(lsKey);
+        if (raw !== null) {
+          await Preferences.set({ key: lsKey, value: raw });
+        }
+      } catch {
+        // Fail silently per key — don't block other keys
+      }
+    }),
+  );
+}

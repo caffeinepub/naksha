@@ -8,7 +8,11 @@
 import { isCapacitorNative, saveToDocuments } from "./capacitorStorage";
 import { isDirectoryPickerAvailable } from "./fileDownload";
 import { getDirHandle, saveDirHandle, saveSnapshotIDB } from "./indexedDB";
-import { PREF_KEYS, Preferences } from "./preferences";
+import {
+  PREF_KEYS,
+  Preferences,
+  syncAllStateToPreferences,
+} from "./preferences";
 import {
   getAppearance,
   getChapters,
@@ -317,6 +321,8 @@ export async function syncToLocalAndIDB(): Promise<void> {
     }
     // Dual-write to IndexedDB
     await saveSnapshotIDB(snap);
+    // Sync all critical state to Preferences for full offline support on Android
+    syncAllStateToPreferences().catch(() => {});
   } catch (e) {
     console.warn("Monarch syncToLocalAndIDB error:", e);
   }

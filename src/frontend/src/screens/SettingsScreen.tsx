@@ -24,6 +24,7 @@ import { useAppearance } from "../context/AppearanceContext";
 import { useBackup } from "../context/BackupContext";
 import { usePalette } from "../context/ThemeContext";
 import type { PaletteId } from "../types";
+import { isCapacitorNative } from "../utils/capacitorStorage";
 import {
   exportData,
   getFolderName,
@@ -871,6 +872,65 @@ const SettingsScreen: FC = () => {
             </span>
           </div>
         )}
+
+        {/* Change Directory button — visible on native and as fallback label on web */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 10,
+          }}
+        >
+          <button
+            type="button"
+            data-ocid="settings.monarch.change_dir.button"
+            onClick={handleSelectFolder}
+            style={{
+              flex: 1,
+              padding: "10px 14px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.05)",
+              color: palette.text,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              transition: "all 0.2s",
+            }}
+          >
+            <FolderOpen size={14} />
+            Change Directory
+          </button>
+          <div
+            style={{
+              fontSize: 11,
+              color: "rgba(255,255,255,0.4)",
+              padding: "6px 10px",
+              borderRadius: 10,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              maxWidth: 140,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={
+              isCapacitorNative()
+                ? `Documents/NakshaData${currentFolderName && currentFolderName !== "Documents" ? ` → ${currentFolderName}` : ""}`
+                : currentFolderName || "NakshaData (default)"
+            }
+          >
+            {isCapacitorNative()
+              ? "Documents/NakshaData"
+              : currentFolderName
+                ? currentFolderName
+                : "NakshaData (default)"}
+          </div>
+        </div>
 
         {!isFolderSystemSupported() && (
           <p
