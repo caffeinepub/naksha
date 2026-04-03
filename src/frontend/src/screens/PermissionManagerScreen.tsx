@@ -65,6 +65,15 @@ const PermissionManagerScreen: FC<Props> = ({ onDismiss }) => {
     }
   };
 
+  const openPhoneSettings = () => {
+    // Try to open app settings deep link (works on some Android WebViews)
+    try {
+      window.location.href = "app-settings:";
+    } catch {
+      // no-op — instructions shown in the blocked help section below
+    }
+  };
+
   const requestStorage = async () => {
     if (!("storage" in navigator && "persist" in navigator.storage)) return;
     setRequesting(true);
@@ -233,8 +242,12 @@ const PermissionManagerScreen: FC<Props> = ({ onDismiss }) => {
           {notifState !== "granted" && notifState !== "unavailable" && (
             <button
               type="button"
-              onClick={requestNotifications}
-              disabled={requesting || notifState === "denied"}
+              onClick={
+                notifState === "denied"
+                  ? openPhoneSettings
+                  : requestNotifications
+              }
+              disabled={requesting}
               style={{
                 background:
                   notifState === "denied"
@@ -246,11 +259,11 @@ const PermissionManagerScreen: FC<Props> = ({ onDismiss }) => {
                 color: notifState === "denied" ? "#EF4444" : palette.accent,
                 fontSize: 12,
                 fontWeight: 600,
-                cursor: notifState === "denied" ? "default" : "pointer",
+                cursor: requesting ? "default" : "pointer",
                 whiteSpace: "nowrap",
               }}
             >
-              {notifState === "denied" ? "Blocked" : "Allow"}
+              {notifState === "denied" ? "Open Settings" : "Allow"}
             </button>
           )}
           {notifState === "granted" && (

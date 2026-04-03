@@ -54,12 +54,19 @@ function getPeriodStart(period: FilterPeriod): number {
 }
 
 function energyColor(rating: number): string {
-  if (rating <= 0) return "#6B7280";
-  if (rating <= 1) return "#EF4444";
-  if (rating <= 2) return "#F97316";
-  if (rating <= 3) return "#F59E0B";
-  if (rating <= 4) return "#84CC16";
-  return "#22C55E";
+  if (rating <= 0) return "#374151"; // neutral grey
+  if (rating <= 2) return "#EF4444"; // red - low battery
+  if (rating === 3) return "#F59E0B"; // amber - medium
+  return "#22C55E"; // green - high battery
+}
+
+function energyGlow(rating: number): string {
+  if (rating <= 0) return "none";
+  if (rating <= 2)
+    return "0 0 8px rgba(239,68,68,0.7), 0 0 16px rgba(239,68,68,0.3)";
+  if (rating === 3)
+    return "0 0 8px rgba(245,158,11,0.7), 0 0 16px rgba(245,158,11,0.3)";
+  return "0 0 8px rgba(34,197,94,0.7), 0 0 16px rgba(34,197,94,0.3)";
 }
 
 function EnergyStars({ rating }: { rating: number }) {
@@ -198,7 +205,6 @@ const DashboardScreen: FC = () => {
   );
 
   // Suppress unused warning
-  void energyColor;
 
   return (
     <div
@@ -381,6 +387,56 @@ const DashboardScreen: FC = () => {
           <div
             style={{
               display: "flex",
+              gap: 10,
+              marginBottom: 8,
+              fontSize: 10,
+              color: "rgba(255,255,255,0.5)",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 2,
+                  background: "#EF4444",
+                  display: "inline-block",
+                  boxShadow: "0 0 4px rgba(239,68,68,0.7)",
+                }}
+              />
+              Low
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 2,
+                  background: "#F59E0B",
+                  display: "inline-block",
+                  boxShadow: "0 0 4px rgba(245,158,11,0.7)",
+                }}
+              />
+              Mid
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 2,
+                  background: "#22C55E",
+                  display: "inline-block",
+                  boxShadow: "0 0 4px rgba(34,197,94,0.7)",
+                }}
+              />
+              High
+            </span>
+          </div>
+          <div
+            style={{
+              display: "flex",
               flexWrap: "wrap",
               gap: 6,
             }}
@@ -394,7 +450,9 @@ const DashboardScreen: FC = () => {
                   height: 22,
                   borderRadius: 4,
                   background: energyColor(s.energyRating),
-                  opacity: 0.85,
+                  opacity: 0.9,
+                  boxShadow: energyGlow(s.energyRating),
+                  transition: "box-shadow 0.3s",
                 }}
               />
             ))}

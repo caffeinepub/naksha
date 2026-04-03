@@ -65,6 +65,11 @@ const SettingsScreen: FC = () => {
 
   useEffect(() => {
     if ("Notification" in window) setNotifPerm(Notification.permission);
+    // On native, folder is always available — auto-link
+    if (isCapacitorNative() && !hasFolderLinked()) {
+      setFolderLinked(true);
+      setCurrentFolderName("Documents/NakshaData");
+    }
     if ("storage" in navigator && "persisted" in navigator.storage) {
       navigator.storage
         .persisted()
@@ -122,20 +127,24 @@ const SettingsScreen: FC = () => {
         countdownRef.current = null;
         setTestNotifCountdown(null);
         // Send test notification to service worker
-        if (
-          "serviceWorker" in navigator &&
-          navigator.serviceWorker.controller
-        ) {
-          navigator.serviceWorker.controller.postMessage({
-            type: "TEST_NOTIFICATION",
-          });
-        } else {
-          // SW not yet controlling — wait for it and retry once
-          if ("serviceWorker" in navigator) {
-            navigator.serviceWorker.ready.then((reg) => {
+        // Always use serviceWorker.ready — controller can be null on first load
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.ready
+            .then((reg) => {
               reg.active?.postMessage({ type: "TEST_NOTIFICATION" });
+            })
+            .catch(() => {
+              // Fallback: direct Notification if SW not available
+              if (
+                "Notification" in window &&
+                Notification.permission === "granted"
+              ) {
+                new Notification("Naksha Timer", {
+                  body: "Test notification — Naksha is working!",
+                  icon: "/icon-192.png",
+                });
+              }
             });
-          }
         }
       } else {
         setTestNotifCountdown(remaining);
@@ -164,11 +173,24 @@ const SettingsScreen: FC = () => {
   };
 
   const handleSelectFolder = async () => {
+    // On native Capacitor, auto-link succeeds immediately
+    if (isCapacitorNative()) {
+      setFolderLinked(true);
+      setCurrentFolderName("Documents/NakshaData");
+      triggerSync();
+      return;
+    }
     const linked = await selectFolder();
     if (linked) {
       setFolderLinked(true);
       setCurrentFolderName(getFolderName());
       triggerSync();
+    } else {
+      // Show a user-friendly message if folder picker not supported
+      setTestResult(
+        "⚠️ Folder picker not supported in this browser. Data is auto-saved to IndexedDB.",
+      );
+      setTimeout(() => setTestResult(null), 5000);
     }
   };
 
