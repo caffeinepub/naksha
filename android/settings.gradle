@@ -1,0 +1,38 @@
+// Gradle 8.2 settings file — declares all included modules
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+}
+
+rootProject.name = 'Naksha'
+
+// App module
+include ':app'
+
+// Capacitor modules — resolved relative to node_modules after `npx cap sync`
+def capacitorRoot = '../node_modules/@capacitor'
+def capacitorCommunityRoot = '../node_modules/@capacitor-community'
+
+include ':capacitor-android'
+project(':capacitor-android').projectDir = new File(capacitorRoot + '/android/android')
+
+include ':capacitor-local-notifications'
+project(':capacitor-local-notifications').projectDir = new File(capacitorRoot + '/local-notifications/android')
+
+include ':capacitor-filesystem'
+project(':capacitor-filesystem').projectDir = new File(capacitorRoot + '/filesystem/android')
+
+include ':capacitor-preferences'
+project(':capacitor-preferences').projectDir = new File(capacitorRoot + '/preferences/android')

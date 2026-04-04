@@ -18,6 +18,7 @@ import TopicsScreen from "./screens/TopicsScreen";
 import type { TabId, Topic } from "./types";
 import { ensureNotificationPermissionOnce } from "./utils/capacitorNotifications";
 import { ensureNakshaDataDir } from "./utils/capacitorStorage";
+import { ensureFilesystemPermissions } from "./utils/nativePermissions";
 import { PREF_KEYS, Preferences } from "./utils/preferences";
 import { getUsername } from "./utils/storage";
 
@@ -332,8 +333,10 @@ function AppInner() {
     if ("storage" in navigator && "persist" in navigator.storage) {
       navigator.storage.persist().catch(() => {});
     }
-    // Ensure NakshaData directory exists on native
-    ensureNakshaDataDir().catch(() => {});
+    // God Mode: check & request filesystem permissions first, then create dir
+    ensureFilesystemPermissions()
+      .then(() => ensureNakshaDataDir())
+      .catch(() => {});
     // Show Permission Manager on first launch (after onboarding)
     Preferences.get({ key: PREF_KEYS.permissionsAsked }).then(({ value }) => {
       if (!value && getUsername()) {

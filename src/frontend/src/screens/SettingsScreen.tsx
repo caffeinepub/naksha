@@ -3,16 +3,26 @@ import {
   BellOff,
   Check,
   CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Cloud,
+  CloudOff,
+  Copy,
   Database,
   Download,
   Eye,
   FolderOpen,
   Image,
   Info,
+  LogIn,
+  LogOut,
   Palette,
   RefreshCw,
+  Share2,
   Shield,
+  Smartphone,
   Star,
+  Trash2,
   Upload,
   User,
   WifiOff,
@@ -23,6 +33,7 @@ import BellPermissionModal from "../components/BellPermissionModal";
 import { useAppearance } from "../context/AppearanceContext";
 import { useBackup } from "../context/BackupContext";
 import { usePalette } from "../context/ThemeContext";
+import { useCloudSync } from "../hooks/useCloudSync";
 import type { PaletteId } from "../types";
 import { isCapacitorNative } from "../utils/capacitorStorage";
 import {
@@ -43,6 +54,18 @@ const SettingsScreen: FC = () => {
   const { paletteId, palette, setPalette } = usePalette();
   const { appearance, setAppearance } = useAppearance();
   const { status, triggerSync } = useBackup();
+  const {
+    isLoggedIn,
+    login,
+    logout,
+    cloudSyncStatus,
+    lastSyncedAt,
+    pushToCloud,
+    pullFromCloud,
+    deleteCloudData,
+    principal,
+  } = useCloudSync();
+
   const [username, setUsernameLocal] = useState(getUsername() || "");
   const [notifPerm, setNotifPerm] = useState<NotificationPermission>("default");
   const [persistedStorage, setPersistedStorage] = useState<boolean | null>(
@@ -60,12 +83,16 @@ const SettingsScreen: FC = () => {
   const [testNotifCountdown, setTestNotifCountdown] = useState<number | null>(
     null,
   );
+  const [copied, setCopied] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [confirmDeleteCloud, setConfirmDeleteCloud] = useState(false);
+  const [confirmPullCloud, setConfirmPullCloud] = useState(false);
+  const [cloudMsg, setCloudMsg] = useState<string | null>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if ("Notification" in window) setNotifPerm(Notification.permission);
-    // On native, folder is always available — auto-link
     if (isCapacitorNative() && !hasFolderLinked()) {
       setFolderLinked(true);
       setCurrentFolderName("Documents/NakshaData");
@@ -88,7 +115,6 @@ const SettingsScreen: FC = () => {
     }
   }, []);
 
-  // Poll notification permission every 3s
   useEffect(() => {
     const interval = setInterval(() => {
       if ("Notification" in window) setNotifPerm(Notification.permission);
@@ -116,7 +142,7 @@ const SettingsScreen: FC = () => {
   };
 
   const handleTestNotification = () => {
-    if (testNotifCountdown !== null) return; // already counting
+    if (testNotifCountdown !== null) return;
     let remaining = 5;
     setTestNotifCountdown(remaining);
 
@@ -126,21 +152,18 @@ const SettingsScreen: FC = () => {
         clearInterval(countdownRef.current!);
         countdownRef.current = null;
         setTestNotifCountdown(null);
-        // Send test notification to service worker
-        // Always use serviceWorker.ready — controller can be null on first load
         if ("serviceWorker" in navigator) {
           navigator.serviceWorker.ready
             .then((reg) => {
               reg.active?.postMessage({ type: "TEST_NOTIFICATION" });
             })
             .catch(() => {
-              // Fallback: direct Notification if SW not available
               if (
                 "Notification" in window &&
                 Notification.permission === "granted"
               ) {
                 new Notification("Naksha Timer", {
-                  body: "Test notification — Naksha is working!",
+                  body: "Test notification \u2014 Naksha is working!",
                   icon: "/icon-192.png",
                 });
               }
@@ -173,7 +196,6 @@ const SettingsScreen: FC = () => {
   };
 
   const handleSelectFolder = async () => {
-    // On native Capacitor, auto-link succeeds immediately
     if (isCapacitorNative()) {
       setFolderLinked(true);
       setCurrentFolderName("Documents/NakshaData");
@@ -186,9 +208,8 @@ const SettingsScreen: FC = () => {
       setCurrentFolderName(getFolderName());
       triggerSync();
     } else {
-      // Show a user-friendly message if folder picker not supported
       setTestResult(
-        "⚠️ Folder picker not supported in this browser. Data is auto-saved to IndexedDB.",
+        "\u26a0\ufe0f Folder picker not supported in this browser. Data is auto-saved to IndexedDB.",
       );
       setTimeout(() => setTestResult(null), 5000);
     }
@@ -231,6 +252,74 @@ const SettingsScreen: FC = () => {
     triggerSync();
     await new Promise<void>((res) => setTimeout(res, 200));
     window.location.reload();
+  };
+
+  const handleCopyLink = async () => {
+    const url = window.location.origin;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // fallback
+      const ta = document.createElement("textarea");
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }
+  };
+
+  const handleShare = async () => {
+    const url = window.location.origin;
+    const text = `Try Naksha \ud83e\udded \u2014 Your personal study timer app!\n\nOpen it here: ${url}\n\nTip: In Chrome, tap the menu \u2192 'Add to Home Screen' to use it as an app!`;
+    if ("share" in navigator) {
+      try {
+        await navigator.share({ title: "Naksha \ud83e\uddedF", text, url });
+        return;
+      } catch {
+        // user cancelled or not supported
+      }
+    }
+    await handleCopyLink();
+  };
+
+  const handleSyncNow = async () => {
+    setCloudMsg(null);
+    try {
+      await pushToCloud();
+      setCloudMsg("\u2705 Synced to cloud!");
+    } catch {
+      setCloudMsg("\u274c Sync failed. Check your connection.");
+    }
+    setTimeout(() => setCloudMsg(null), 4000);
+  };
+
+  const handlePullCloud = async () => {
+    setConfirmPullCloud(false);
+    setCloudMsg(null);
+    try {
+      await pullFromCloud();
+      setCloudMsg("\u2705 Cloud data loaded! Refresh for changes.");
+    } catch {
+      setCloudMsg("\u274c Pull failed. Check your connection.");
+    }
+    setTimeout(() => setCloudMsg(null), 5000);
+  };
+
+  const handleDeleteCloud = async () => {
+    setConfirmDeleteCloud(false);
+    setCloudMsg(null);
+    try {
+      await deleteCloudData();
+      setCloudMsg("\u2705 Cloud data deleted.");
+    } catch {
+      setCloudMsg("\u274c Delete failed.");
+    }
+    setTimeout(() => setCloudMsg(null), 4000);
   };
 
   const sectionStyle: React.CSSProperties = {
@@ -382,7 +471,6 @@ const SettingsScreen: FC = () => {
           ? "Error"
           : "No folder linked";
 
-  // Notification permission styling
   const notifColor =
     notifPerm === "granted"
       ? "#22C55E"
@@ -396,6 +484,44 @@ const SettingsScreen: FC = () => {
       : notifPerm === "denied"
         ? "Blocked \u274c"
         : "Not set \u26a0\ufe0f";
+
+  // Cloud sync status display
+  const cloudStatusColor =
+    cloudSyncStatus === "synced"
+      ? "#22C55E"
+      : cloudSyncStatus === "syncing"
+        ? "#F59E0B"
+        : cloudSyncStatus === "error"
+          ? "#EF4444"
+          : cloudSyncStatus === "offline"
+            ? "rgba(255,255,255,0.4)"
+            : palette.textMuted;
+
+  const cloudStatusLabel =
+    cloudSyncStatus === "synced"
+      ? "Synced \u2713"
+      : cloudSyncStatus === "syncing"
+        ? "Syncing\u2026"
+        : cloudSyncStatus === "error"
+          ? "Error"
+          : cloudSyncStatus === "offline"
+            ? "Offline"
+            : "Idle";
+
+  const truncatedPrincipal = principal
+    ? `${principal.slice(0, 8)}\u2026${principal.slice(-6)}`
+    : null;
+
+  const lastSyncLabel = lastSyncedAt
+    ? (() => {
+        const diffMs = Date.now() - lastSyncedAt.getTime();
+        const diffMin = Math.floor(diffMs / 60000);
+        if (diffMin < 1) return "Just now";
+        if (diffMin < 60) return `${diffMin}m ago`;
+        const diffHr = Math.floor(diffMin / 60);
+        return `${diffHr}h ago`;
+      })()
+    : null;
 
   return (
     <div
@@ -557,7 +683,6 @@ const SettingsScreen: FC = () => {
           Notifications
         </div>
 
-        {/* Permission status pill */}
         <div
           style={{
             display: "flex",
@@ -586,7 +711,6 @@ const SettingsScreen: FC = () => {
           </span>
         </div>
 
-        {/* Enable Timer Notifications button */}
         <button
           type="button"
           data-ocid="settings.notifications.primary_button"
@@ -631,7 +755,6 @@ const SettingsScreen: FC = () => {
               : "Enable Timer Notifications"}
         </button>
 
-        {/* Test Notification button */}
         <button
           type="button"
           data-ocid="settings.notifications.secondary_button"
@@ -678,7 +801,6 @@ const SettingsScreen: FC = () => {
           </div>
         )}
 
-        {/* Permission Manager button */}
         <button
           type="button"
           data-ocid="settings.permissions.button"
@@ -704,13 +826,12 @@ const SettingsScreen: FC = () => {
         </button>
       </div>
 
-      {/* Data Management — Monarch Storage */}
+      {/* Data Management */}
       <div style={sectionStyle}>
         <div style={labelStyle}>
           <FolderOpen size={13} /> Data Management
         </div>
 
-        {/* Sync status row */}
         <div
           style={{
             display: "flex",
@@ -744,11 +865,7 @@ const SettingsScreen: FC = () => {
               <>
                 Master Folder:{" "}
                 <strong
-                  style={{
-                    color: "#FFFFFF",
-                    fontWeight: 700,
-                    fontSize: 13,
-                  }}
+                  style={{ color: "#FFFFFF", fontWeight: 700, fontSize: 13 }}
                 >
                   {currentFolderName || "(linked)"}
                 </strong>
@@ -768,7 +885,6 @@ const SettingsScreen: FC = () => {
           </span>
         </div>
 
-        {/* Refresh & Sync button */}
         <div
           style={{
             display: "flex",
@@ -829,7 +945,6 @@ const SettingsScreen: FC = () => {
           )}
         </div>
 
-        {/* Select Folder button */}
         {isFolderSystemSupported() && (
           <button
             type="button"
@@ -864,7 +979,6 @@ const SettingsScreen: FC = () => {
           </button>
         )}
 
-        {/* Folder path display */}
         {folderLinked && currentFolderName && (
           <div
             style={{
@@ -895,7 +1009,6 @@ const SettingsScreen: FC = () => {
           </div>
         )}
 
-        {/* Change Directory button — visible on native and as fallback label on web */}
         <div
           style={{
             display: "flex",
@@ -942,7 +1055,7 @@ const SettingsScreen: FC = () => {
             }}
             title={
               isCapacitorNative()
-                ? `Documents/NakshaData${currentFolderName && currentFolderName !== "Documents" ? ` → ${currentFolderName}` : ""}`
+                ? `Documents/NakshaData${currentFolderName && currentFolderName !== "Documents" ? ` \u2192 ${currentFolderName}` : ""}`
                 : currentFolderName || "NakshaData (default)"
             }
           >
@@ -968,7 +1081,6 @@ const SettingsScreen: FC = () => {
           </p>
         )}
 
-        {/* Test Connection button */}
         {folderLinked && (
           <button
             type="button"
@@ -996,7 +1108,6 @@ const SettingsScreen: FC = () => {
           </button>
         )}
 
-        {/* Test result toast */}
         {testResult && (
           <div
             data-ocid="settings.monarch.success_state"
@@ -1019,7 +1130,6 @@ const SettingsScreen: FC = () => {
           </div>
         )}
 
-        {/* Export / Import row */}
         <div style={{ display: "flex", gap: 10 }}>
           <button
             type="button"
@@ -1147,7 +1257,6 @@ const SettingsScreen: FC = () => {
           <Eye size={13} /> Appearance
         </div>
 
-        {/* Background image */}
         <div style={{ marginBottom: 20 }}>
           <div
             style={{
@@ -1227,7 +1336,6 @@ const SettingsScreen: FC = () => {
             )}
         </div>
 
-        {/* Living Space */}
         <div>
           <div
             style={{
@@ -1272,6 +1380,574 @@ const SettingsScreen: FC = () => {
               setAppearance({ ...appearance, orionBeltOpacity: v }),
             )}
         </div>
+      </div>
+
+      {/* ===== CLOUD SYNC & ACCOUNT ===== */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>
+          <Cloud size={13} /> Cloud Sync &amp; Account
+        </div>
+
+        {!isLoggedIn ? (
+          /* --- Logged OUT state --- */
+          <>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 14,
+              }}
+            >
+              <CloudOff size={15} color="rgba(255,255,255,0.35)" />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "rgba(255,255,255,0.4)",
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  borderRadius: 20,
+                  padding: "3px 10px",
+                }}
+              >
+                Not logged in
+              </span>
+            </div>
+            <p
+              style={{
+                fontSize: 13,
+                color: palette.textMuted,
+                lineHeight: 1.5,
+                margin: "0 0 14px",
+              }}
+            >
+              Log in to backup your study data to the cloud and access it from
+              any device \u2014 even if you lose your phone.
+            </p>
+            <button
+              type="button"
+              data-ocid="settings.cloud.login.primary_button"
+              onClick={login}
+              style={{
+                width: "100%",
+                padding: "13px 16px",
+                borderRadius: 14,
+                border: `1.5px solid ${palette.accent}60`,
+                background: `${palette.accent}18`,
+                color: palette.accent,
+                fontSize: 15,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                boxShadow: `0 0 20px ${palette.accentGlow}30`,
+                transition: "all 0.25s",
+              }}
+            >
+              <LogIn size={17} />
+              Login with Internet Identity
+            </button>
+          </>
+        ) : (
+          /* --- Logged IN state --- */
+          <>
+            {/* Principal pill */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <User size={14} color="#22C55E" />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#22C55E",
+                  background: "rgba(34,197,94,0.10)",
+                  border: "1px solid rgba(34,197,94,0.35)",
+                  borderRadius: 20,
+                  padding: "3px 10px",
+                  fontFamily: "monospace",
+                  boxShadow: "0 0 8px rgba(34,197,94,0.2)",
+                }}
+              >
+                {truncatedPrincipal}
+              </span>
+            </div>
+
+            {/* Sync status + last synced */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 14,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: cloudStatusColor,
+                  background: `${cloudStatusColor}14`,
+                  border: `1px solid ${cloudStatusColor}40`,
+                  borderRadius: 20,
+                  padding: "3px 10px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
+                  boxShadow:
+                    cloudSyncStatus === "synced"
+                      ? "0 0 8px rgba(34,197,94,0.25)"
+                      : cloudSyncStatus === "syncing"
+                        ? "0 0 8px rgba(245,158,11,0.3)"
+                        : "none",
+                  animation:
+                    cloudSyncStatus === "syncing"
+                      ? "pulse 1s ease-in-out infinite"
+                      : "none",
+                }}
+              >
+                <Cloud size={11} />
+                {cloudStatusLabel}
+              </span>
+              {lastSyncLabel && (
+                <span style={{ fontSize: 11, color: palette.textMuted }}>
+                  Last synced: {lastSyncLabel}
+                </span>
+              )}
+            </div>
+
+            {/* Feedback message */}
+            {cloudMsg && (
+              <div
+                data-ocid="settings.cloud.success_state"
+                style={{
+                  marginBottom: 12,
+                  padding: "8px 12px",
+                  borderRadius: 8,
+                  background: cloudMsg.startsWith("\u274c")
+                    ? "rgba(239,68,68,0.10)"
+                    : "rgba(34,197,94,0.10)",
+                  border: cloudMsg.startsWith("\u274c")
+                    ? "1px solid rgba(239,68,68,0.3)"
+                    : "1px solid rgba(34,197,94,0.3)",
+                  fontSize: 12,
+                  color: cloudMsg.startsWith("\u274c") ? "#EF4444" : "#22C55E",
+                  lineHeight: 1.4,
+                }}
+              >
+                {cloudMsg}
+              </div>
+            )}
+
+            {/* Sync Now button */}
+            <button
+              type="button"
+              data-ocid="settings.cloud.sync.primary_button"
+              onClick={handleSyncNow}
+              disabled={cloudSyncStatus === "syncing"}
+              style={{
+                width: "100%",
+                padding: "11px 16px",
+                borderRadius: 12,
+                border: `1px solid ${palette.accent}50`,
+                background: `${palette.accent}12`,
+                color: palette.accent,
+                fontSize: 14,
+                fontWeight: 700,
+                cursor:
+                  cloudSyncStatus === "syncing" ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 8,
+                opacity: cloudSyncStatus === "syncing" ? 0.7 : 1,
+                transition: "all 0.2s",
+                boxShadow: `0 0 12px ${palette.accentGlow}20`,
+              }}
+            >
+              <RefreshCw
+                size={15}
+                style={{
+                  animation:
+                    cloudSyncStatus === "syncing"
+                      ? "spin 0.6s linear infinite"
+                      : "none",
+                }}
+              />
+              {cloudSyncStatus === "syncing" ? "Syncing\u2026" : "Sync Now"}
+            </button>
+
+            {/* Pull from Cloud button */}
+            {!confirmPullCloud ? (
+              <button
+                type="button"
+                data-ocid="settings.cloud.pull.secondary_button"
+                onClick={() => setConfirmPullCloud(true)}
+                style={{
+                  width: "100%",
+                  padding: "11px 16px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(255,255,255,0.05)",
+                  color: palette.text,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 8,
+                  transition: "all 0.2s",
+                }}
+              >
+                <Download size={15} />
+                Pull from Cloud
+              </button>
+            ) : (
+              <div
+                style={{
+                  marginBottom: 8,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  background: "rgba(245,158,11,0.08)",
+                  border: "1px solid rgba(245,158,11,0.3)",
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "#F59E0B",
+                    margin: "0 0 10px",
+                    fontWeight: 600,
+                  }}
+                >
+                  \u26a0\ufe0f This will overwrite your local data with cloud
+                  data. Continue?
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    data-ocid="settings.cloud.pull.confirm_button"
+                    onClick={handlePullCloud}
+                    style={{
+                      flex: 1,
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: "1px solid rgba(245,158,11,0.5)",
+                      background: "rgba(245,158,11,0.15)",
+                      color: "#F59E0B",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Yes, overwrite
+                  </button>
+                  <button
+                    type="button"
+                    data-ocid="settings.cloud.pull.cancel_button"
+                    onClick={() => setConfirmPullCloud(false)}
+                    style={{
+                      flex: 1,
+                      padding: "8px 12px",
+                      borderRadius: 10,
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "rgba(255,255,255,0.05)",
+                      color: palette.textMuted,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Logout + Delete row */}
+            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <button
+                type="button"
+                data-ocid="settings.cloud.logout.button"
+                onClick={logout}
+                style={{
+                  flex: 1,
+                  padding: "9px 12px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(255,255,255,0.04)",
+                  color: "rgba(255,255,255,0.6)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  transition: "all 0.2s",
+                }}
+              >
+                <LogOut size={14} />
+                Logout
+              </button>
+
+              {!confirmDeleteCloud ? (
+                <button
+                  type="button"
+                  data-ocid="settings.cloud.delete.delete_button"
+                  onClick={() => setConfirmDeleteCloud(true)}
+                  style={{
+                    flex: 1,
+                    padding: "9px 12px",
+                    borderRadius: 10,
+                    border: "1px solid rgba(239,68,68,0.3)",
+                    background: "rgba(239,68,68,0.06)",
+                    color: "#EF4444",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    transition: "all 0.2s",
+                  }}
+                >
+                  <Trash2 size={14} />
+                  Delete Cloud Data
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  data-ocid="settings.cloud.delete.confirm_button"
+                  onClick={handleDeleteCloud}
+                  style={{
+                    flex: 1,
+                    padding: "9px 12px",
+                    borderRadius: 10,
+                    border: "1.5px solid rgba(239,68,68,0.7)",
+                    background: "rgba(239,68,68,0.15)",
+                    color: "#EF4444",
+                    fontSize: 13,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    animation: "pulse 0.8s ease-in-out 2",
+                  }}
+                >
+                  \u274c Confirm Delete
+                </button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ===== SHARE NAKSHA ===== */}
+      <div style={sectionStyle}>
+        <div style={labelStyle}>
+          <Share2 size={13} /> Share Naksha
+        </div>
+
+        <p
+          style={{
+            fontSize: 13,
+            color: palette.textMuted,
+            lineHeight: 1.6,
+            margin: "0 0 16px",
+          }}
+        >
+          Share Naksha with friends! They can open it in any browser and add it
+          to their home screen \u2014 no install required.
+        </p>
+
+        {/* Action buttons row */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+          <button
+            type="button"
+            data-ocid="settings.share.copy.primary_button"
+            onClick={handleCopyLink}
+            style={{
+              flex: 1,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: copied
+                ? "1px solid rgba(34,197,94,0.5)"
+                : "1px solid rgba(255,255,255,0.14)",
+              background: copied
+                ? "rgba(34,197,94,0.10)"
+                : "rgba(255,255,255,0.05)",
+              color: copied ? "#22C55E" : palette.text,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              transition: "all 0.25s",
+              boxShadow: copied ? "0 0 12px rgba(34,197,94,0.2)" : "none",
+            }}
+          >
+            {copied ? <Check size={15} /> : <Copy size={15} />}
+            {copied ? "Copied!" : "Copy Link"}
+          </button>
+
+          <button
+            type="button"
+            data-ocid="settings.share.share.primary_button"
+            onClick={handleShare}
+            style={{
+              flex: 1,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: `1.5px solid ${palette.accent}55`,
+              background: `${palette.accent}15`,
+              color: palette.accent,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              boxShadow: `0 0 14px ${palette.accentGlow}25`,
+              transition: "all 0.25s",
+            }}
+          >
+            <Share2 size={15} />
+            Share
+          </button>
+        </div>
+
+        {/* How to install as App — expandable card */}
+        <button
+          type="button"
+          data-ocid="settings.share.install_guide.toggle"
+          onClick={() => setShowInstallGuide((v) => !v)}
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            borderRadius: 12,
+            border: showInstallGuide
+              ? `1px solid ${palette.accent}40`
+              : "1px solid rgba(255,255,255,0.10)",
+            background: showInstallGuide
+              ? `${palette.accent}0A`
+              : "rgba(255,255,255,0.04)",
+            color: showInstallGuide ? palette.accent : palette.textMuted,
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            transition: "all 0.2s",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Smartphone size={14} />
+            How to install as App
+          </div>
+          {showInstallGuide ? (
+            <ChevronUp size={14} />
+          ) : (
+            <ChevronDown size={14} />
+          )}
+        </button>
+
+        {showInstallGuide && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: "14px 16px",
+              borderRadius: 12,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: palette.accent,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  marginBottom: 5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                \ud83e\udd16 Android
+              </div>
+              <p
+                style={{
+                  fontSize: 13,
+                  color: palette.text,
+                  margin: 0,
+                  lineHeight: 1.6,
+                }}
+              >
+                Open in <strong>Chrome</strong> \u2192 tap the{" "}
+                <strong>\u22ef menu</strong> (top-right) \u2192 tap{" "}
+                <strong>\u2018Add to Home screen\u2019</strong>
+              </p>
+            </div>
+            <div
+              style={{
+                height: 1,
+                background: "rgba(255,255,255,0.07)",
+              }}
+            />
+            <div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: palette.accent,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  marginBottom: 5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                \ud83c\udf4e iPhone
+              </div>
+              <p
+                style={{
+                  fontSize: 13,
+                  color: palette.text,
+                  margin: 0,
+                  lineHeight: 1.6,
+                }}
+              >
+                Open in <strong>Safari</strong> \u2192 tap the{" "}
+                <strong>Share button</strong> \u2192 tap{" "}
+                <strong>\u2018Add to Home Screen\u2019</strong>
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* About */}

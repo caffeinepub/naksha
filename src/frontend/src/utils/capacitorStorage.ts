@@ -3,9 +3,8 @@
  * graceful web fallback. All Capacitor imports are DYNAMIC so the web
  * build never fails when the package is absent from node_modules.
  *
- * TypeScript is instructed to skip type checking on these dynamic imports
- * via Function constructor indirection, since the packages are only present
- * at runtime inside the Capacitor Android shell.
+ * IMPORTANT: All file operations use Directory.Documents ONLY.
+ * Directory.Data and Directory.ExternalStorage are blocked on Android 14.
  */
 
 /** Returns true only when the app is running inside a Capacitor native shell */
@@ -27,6 +26,8 @@ async function dynamicImport(pkg: string): Promise<any> {
  * Ensure the NakshaData directory exists under Documents.
  * On native: calls Filesystem.mkdir({ path: 'NakshaData', directory: Directory.Documents }).
  * On web: no-op.
+ *
+ * NOTE: Always uses Directory.Documents — never Data or ExternalStorage.
  */
 export async function ensureNakshaDataDir(): Promise<void> {
   if (!isCapacitorNative()) return;
@@ -36,7 +37,7 @@ export async function ensureNakshaDataDir(): Promise<void> {
     );
     await Filesystem.mkdir({
       path: "NakshaData",
-      directory: Directory.Documents,
+      directory: Directory.Documents, // MUST be Documents on Android 14
       recursive: true,
     });
   } catch (e: any) {
@@ -49,6 +50,9 @@ export async function ensureNakshaDataDir(): Promise<void> {
 /**
  * Write a string to the Android Documents/NakshaData directory.
  * Falls back to a Blob download on web.
+ *
+ * Uses Directory.Documents exclusively — blocked directories
+ * (Data, ExternalStorage) are never used.
  */
 export async function saveToDocuments(
   filename: string,
@@ -62,7 +66,7 @@ export async function saveToDocuments(
       await Filesystem.writeFile({
         path: `NakshaData/${filename}`,
         data,
-        directory: Directory.Documents,
+        directory: Directory.Documents, // MUST be Documents on Android 14
         encoding: Encoding.UTF8,
         recursive: true,
       });
@@ -92,6 +96,8 @@ export async function saveToDocuments(
 /**
  * Read a file from the Android Documents/NakshaData directory.
  * Returns null on web or if the file doesn't exist.
+ *
+ * Uses Directory.Documents exclusively.
  */
 export async function readFromDocuments(
   filename: string,
@@ -103,7 +109,7 @@ export async function readFromDocuments(
     );
     const result = await Filesystem.readFile({
       path: `NakshaData/${filename}`,
-      directory: Directory.Documents,
+      directory: Directory.Documents, // MUST be Documents on Android 14
       encoding: Encoding.UTF8,
     });
     return typeof result.data === "string" ? result.data : null;
@@ -121,4 +127,25 @@ export async function appendOrCreateFile(
   data: string,
 ): Promise<boolean> {
   return saveToDocuments(filename, data);
+}
+
+/**
+ * Check if a file exists in Documents/NakshaData.
+ */
+export async function fileExistsInDocuments(
+  filename: string,
+): Promise<boolean> {
+  if (!isCapacitorNative()) return false;
+  try {
+    const { Filesystem, Directory } = await dynamicImport(
+      "@capacitor/filesystem",
+    );
+    await Filesystem.stat({
+      path: `NakshaData/${filename}`,
+      directory: Directory.Documents, // MUST be Documents on Android 14
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }

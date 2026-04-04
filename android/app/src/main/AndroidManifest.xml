@@ -2,28 +2,75 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.suryansh.naksha">
 
-    <!-- Permissions for notifications (Android 13+) -->
+    <!-- ================================================================
+         NOTIFICATIONS
+         POST_NOTIFICATIONS is required on Android 13+ (API 33).
+         Declared here; runtime dialog is triggered in MainActivity.kt.
+         ================================================================ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Permissions for external storage (Android 9 and below) -->
+    <!-- ================================================================
+         SCOPED STORAGE / SAF — Android 14 (API 34) compliant
+
+         MANAGE_EXTERNAL_STORAGE — 'All Files Access' permission.
+         Required for Documents/ read/write on Android 11+.
+         MainActivity.kt launches ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION
+         at runtime to prompt the user.
+
+         READ/WRITE_EXTERNAL_STORAGE retained for API ≤ 29 (Android 9)
+         only — maxSdkVersion ensures they are ignored on API 30+.
+         ================================================================ -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
 
-    <!-- Vibration for notifications -->
+    <!-- ================================================================
+         SYSTEM
+         ================================================================ -->
     <uses-permission android:name="android.permission.VIBRATE" />
-
-    <!-- Wake lock so timer keeps running when screen is off -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- Schedule exact alarms (needed for LocalNotifications at precise time) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-
-    <!-- Internet permission for ICP/web content -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- ================================================================
+         SAF QUERIES BLOCK
+         Declares which implicit intents this app can resolve.
+         Required on Android 11+ (API 30) to see other apps' providers.
+
+         - ACTION_OPEN_DOCUMENT_TREE   → folder picker (SAF)
+         - ACTION_OPEN_DOCUMENT        → file picker
+         - ACTION_GET_CONTENT          → generic content picker (fallback)
+         - MANAGE_ALL_FILES_ACCESS     → 'All Files' settings page
+         ================================================================ -->
+    <queries>
+        <!-- SAF folder picker -->
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT_TREE" />
+        </intent>
+        <!-- SAF file picker -->
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <!-- Generic content picker -->
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <!-- All Files Access settings deep-link -->
+        <intent>
+            <action android:name="android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION" />
+        </intent>
+        <!-- Fallback all-files page -->
+        <intent>
+            <action android:name="android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -32,15 +79,25 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true">
 
+        <!-- ============================================================
+             MAIN ACTIVITY — Kotlin, BridgeActivity (Capacitor)
+             android:name=".MainActivity" resolves to
+             com.suryansh.naksha.MainActivity (the Kotlin class).
+
+             The bridge is initialised inside BridgeActivity.onCreate()
+             BEFORE the WebView loads — this eliminates the
+             'Could not write' race condition.
+             ============================================================ -->
         <activity
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:name=".MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
-            android:exported="true">
+            android:exported="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode">
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -49,7 +106,11 @@
 
         </activity>
 
-        <!-- Required for Capacitor LocalNotifications exact alarm receiver -->
+        <!-- ============================================================
+             CAPACITOR LOCAL NOTIFICATIONS — API 34 compliant receivers
+             android:exported="false" prevents external apps from
+             triggering these receivers directly.
+             ============================================================ -->
         <receiver
             android:name="com.capacitorjs.plugins.localnotifications.LocalNotificationRestoreReceiver"
             android:exported="false" />
@@ -57,8 +118,6 @@
         <receiver
             android:name="com.capacitorjs.plugins.localnotifications.LocalNotificationReceiver"
             android:exported="false" />
-
-        <!-- Notification channels are created programmatically -->
 
     </application>
 

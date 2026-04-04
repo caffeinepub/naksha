@@ -1,0 +1,26 @@
+// Top-level build file — Gradle 8.2 / AGP 8.2 / Kotlin 1.9
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // Android Gradle Plugin 8.2.x (targets SDK 34)
+        classpath 'com.android.tools.build:gradle:8.2.1'
+        // Kotlin Gradle Plugin 1.9.x
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.22'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        // Capacitor / Ionic artifacts
+        maven { url 'https://jitpack.io' }
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

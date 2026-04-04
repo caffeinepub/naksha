@@ -1,57 +1,37 @@
 {
-  "name": "Naksha",
-  "short_name": "Naksha",
-  "id": "/",
-  "scope": "/",
-  "description": "Your Time. Your Orbit. — A mobile-first study timer and productivity app.",
-  "start_url": "/",
-  "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
-  "orientation": "portrait",
-  "theme_color": "#35BDF3",
   "background_color": "#0D0D1A",
   "categories": ["education", "productivity", "utilities"],
-  "prefer_related_applications": false,
+  "description": "Your Time. Your Orbit. — A mobile-first study timer and productivity app.",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
   "icons": [
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    }
+    { "purpose": "any", "sizes": "192x192", "src": "/icon-192.png", "type": "image/png" },
+    { "purpose": "maskable", "sizes": "192x192", "src": "/icon-192.png", "type": "image/png" },
+    { "purpose": "any", "sizes": "512x512", "src": "/icon-512.png", "type": "image/png" },
+    { "purpose": "maskable", "sizes": "512x512", "src": "/icon-512.png", "type": "image/png" }
   ],
+  "id": "/",
+  "name": "Naksha",
+  "orientation": "portrait",
+  "prefer_related_applications": false,
+  "scope": "/",
+  "short_name": "Naksha",
   "shortcuts": [
     {
+      "description": "Jump straight to the study timer",
+      "icons": [{ "sizes": "192x192", "src": "/icon-192.png" }],
       "name": "Start Timer",
       "short_name": "Timer",
-      "description": "Jump straight to the study timer",
-      "url": "/?tab=timer",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "url": "/?tab=timer"
     },
     {
+      "description": "View your task list",
+      "icons": [{ "sizes": "192x192", "src": "/icon-192.png" }],
       "name": "To-Do List",
       "short_name": "To-Do",
-      "description": "View your task list",
-      "url": "/?tab=todo",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "url": "/?tab=todo"
     }
-  ]
+  ],
+  "start_url": "/",
+  "theme_color": "#35BDF3"
 }

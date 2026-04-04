@@ -7,6 +7,29 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
+export type Time = bigint;
+export interface UserProfile {
+    name: string;
+}
+export interface UserDataEntry {
+    data: string;
+    lastUpdated: Time;
+}
+export enum UserRole {
+    admin = "admin",
+    user = "user",
+    guest = "guest"
+}
 export interface backendInterface {
+    assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    deleteData(): Promise<void>;
     getAppName(): Promise<string>;
+    getCallerUserProfile(): Promise<UserProfile | null>;
+    getCallerUserRole(): Promise<UserRole>;
+    getLastUpdated(): Promise<Time | null>;
+    getUserData(): Promise<UserDataEntry | null>;
+    getUserProfile(user: Principal): Promise<UserProfile | null>;
+    isCallerAdmin(): Promise<boolean>;
+    saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    saveUserData(data: string): Promise<Time>;
 }

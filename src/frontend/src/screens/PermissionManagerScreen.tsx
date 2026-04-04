@@ -8,6 +8,11 @@ import {
 } from "lucide-react";
 import { type FC, useEffect, useState } from "react";
 import { usePalette } from "../context/ThemeContext";
+import { isCapacitorNative } from "../utils/capacitorStorage";
+import {
+  ensureFilesystemPermissions,
+  isFilesystemPermissionGranted,
+} from "../utils/nativePermissions";
 import { PREF_KEYS, Preferences } from "../utils/preferences";
 
 interface Props {
@@ -21,6 +26,8 @@ const PermissionManagerScreen: FC<Props> = ({ onDismiss }) => {
   const [notifState, setNotifState] = useState<PermState>("idle");
   const [storageState, setStorageState] = useState<PermState>("idle");
   const [requesting, setRequesting] = useState(false);
+  const [fsState, setFsState] = useState<PermState>("idle");
+  const isNative = isCapacitorNative();
 
   // Read current permission state on mount
   useEffect(() => {
@@ -82,6 +89,20 @@ const PermissionManagerScreen: FC<Props> = ({ onDismiss }) => {
       setStorageState(granted ? "granted" : "denied");
     } catch {
       setStorageState("denied");
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  const requestFilesystem = async () => {
+    if (!isCapacitorNative()) return;
+    setRequesting(true);
+    try {
+      await ensureFilesystemPermissions();
+      const granted = await isFilesystemPermissionGranted();
+      setFsState(granted ? "granted" : "denied");
+    } catch {
+      setFsState("denied");
     } finally {
       setRequesting(false);
     }
@@ -346,6 +367,102 @@ const PermissionManagerScreen: FC<Props> = ({ onDismiss }) => {
             <CheckCircle size={20} color="#22C55E" style={{ flexShrink: 0 }} />
           )}
         </div>
+
+        {/* Filesystem (Android native only) */}
+        {isNative && (
+          <div
+            style={{
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.10)",
+              borderRadius: 14,
+              padding: "16px 18px",
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+            }}
+          >
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 12,
+                background:
+                  fsState === "granted"
+                    ? "rgba(34,197,94,0.1)"
+                    : "rgba(255,255,255,0.06)",
+                border:
+                  fsState === "granted"
+                    ? "1px solid rgba(34,197,94,0.4)"
+                    : "1px solid rgba(255,255,255,0.1)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <FolderOpen size={20} color={stateColor(fsState)} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div
+                style={{ color: palette.text, fontWeight: 600, fontSize: 14 }}
+              >
+                Files &amp; Storage
+              </div>
+              <div
+                style={{
+                  color: "rgba(255,255,255,0.45)",
+                  fontSize: 12,
+                  marginTop: 2,
+                }}
+              >
+                Required to save your data on Android 14+
+              </div>
+              <div
+                style={{
+                  color: stateColor(fsState),
+                  fontSize: 11,
+                  marginTop: 4,
+                  fontWeight: 600,
+                }}
+              >
+                {stateLabel(fsState)}
+              </div>
+            </div>
+            {fsState !== "granted" && (
+              <button
+                type="button"
+                onClick={requestFilesystem}
+                disabled={requesting}
+                style={{
+                  background:
+                    fsState === "denied"
+                      ? "rgba(239,68,68,0.12)"
+                      : `${palette.accent}22`,
+                  border:
+                    fsState === "denied"
+                      ? "1px solid rgba(239,68,68,0.3)"
+                      : `1px solid ${palette.accent}50`,
+                  borderRadius: 8,
+                  padding: "6px 14px",
+                  color: fsState === "denied" ? "#EF4444" : palette.accent,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: requesting ? "default" : "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {fsState === "denied" ? "Open Settings" : "Allow"}
+              </button>
+            )}
+            {fsState === "granted" && (
+              <CheckCircle
+                size={20}
+                color="#22C55E"
+                style={{ flexShrink: 0 }}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       {/* Notification blocked help */}
