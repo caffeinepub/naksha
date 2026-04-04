@@ -1,12 +1,17 @@
-/* Naksha Service Worker — v11 (Workbox-compatible offline cache + background notifications) */
+/* Naksha Service Worker — v19 (Full PWA offline + background notifications) */
 
-const CACHE_NAME = 'naksha-v11';
+const CACHE_VERSION = 'v19';
+const CACHE_NAME = `naksha-${CACHE_VERSION}`;
+const RUNTIME_CACHE = `naksha-runtime-${CACHE_VERSION}`;
 
-// App shell: files always needed to render the app
+// App shell — always pre-cached on install
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
+  '/assets/fonts/Satoshi.woff2',
 ];
 
 // ────────────────────────────────────────────────
@@ -14,41 +19,38 @@ const PRECACHE_ASSETS = [
 // ────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      // Precache shell. Errors on individual assets are swallowed so
-      // install always succeeds even if icons are missing.
-      return Promise.allSettled(
-        PRECACHE_ASSETS.map((url) =>
-          cache.add(url).catch(() => {})
-        )
-      );
-    })
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.allSettled(
+        PRECACHE_ASSETS.map((url) => cache.add(url).catch(() => {}))
+      )
+    )
   );
   self.skipWaiting();
 });
 
 // ────────────────────────────────────────────────
-// ACTIVATE — purge old caches
+// ACTIVATE — purge old caches and take control
 // ────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
-        )
+    caches.keys().then((keys) =>
+      Promise.all(
+        keys
+          .filter((k) => k !== CACHE_NAME && k !== RUNTIME_CACHE)
+          .map((k) => caches.delete(k))
       )
+    )
   );
   self.clients.claim();
 });
 
 // ────────────────────────────────────────────────
-// FETCH — Workbox-style routing strategy
+// FETCH — Workbox-style routing
 //
-// Navigation requests (HTML pages)  → Network-first, cache fallback
-// Static assets (JS/CSS/fonts/img)  → Cache-first, network fallback
-// API / non-GET                     → Pass through
+//  Navigation (HTML)          → Network-first, cache fallback → offline shell
+//  Static assets (JS/CSS/img) → Cache-first, network fallback (instant loads)
+//  API calls (/api/*)         → Network-only (pass through)
+//  Cross-origin               → Pass through
 // ────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
   const { request } = event;
@@ -56,24 +58,22 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Skip cross-origin requests (ICP API, auth, etc.)
+  // Skip cross-origin (ICP API, CDN, etc.)
   if (url.origin !== self.location.origin) return;
 
-  // Skip ICP API paths
+  // Skip ICP canister API paths — always network
   if (url.pathname.startsWith('/api/')) return;
 
   const isNavigation = request.mode === 'navigate';
-  const isStaticAsset =
-    url.pathname.match(/\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|ico|webp|json)$/i);
+  const isStaticAsset = /\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|ico|webp|json)$/i.test(url.pathname);
 
   if (isNavigation) {
-    // Network-first for HTML so users always get fresh content when online
+    // Network-first: always try fresh HTML, fall back to cached shell
     event.respondWith(
       fetch(request)
         .then((response) => {
           if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+            caches.open(CACHE_NAME).then((c) => c.put(request, response.clone()));
           }
           return response;
         })
@@ -85,14 +85,13 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (isStaticAsset) {
-    // Cache-first for static assets — instant loads offline
+    // Cache-first: instant offline loads for all static assets
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
         return fetch(request).then((response) => {
           if (response && response.status === 200 && response.type !== 'opaque') {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+            caches.open(RUNTIME_CACHE).then((c) => c.put(request, response.clone()));
           }
           return response;
         });
@@ -106,8 +105,7 @@ self.addEventListener('fetch', (event) => {
     fetch(request)
       .then((response) => {
         if (response && response.status === 200 && response.type === 'basic') {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+          caches.open(RUNTIME_CACHE).then((c) => c.put(request, response.clone()));
         }
         return response;
       })
@@ -118,7 +116,6 @@ self.addEventListener('fetch', (event) => {
 
 // ────────────────────────────────────────────────
 // TIMER STATE + BACKGROUND NOTIFICATIONS
-// (logic unchanged from v5, kept fully intact)
 // ────────────────────────────────────────────────
 
 let timerInterval = null;
@@ -191,9 +188,6 @@ async function updateNotification() {
   const notifications = await self.registration.getNotifications({ tag: 'naksha-timer' });
   notifications.forEach((n) => n.close());
 
-  // Android requires showNotification inside the service worker
-  // (self.registration.showNotification) — this is the only way
-  // background notifications work in Android WebView/Capacitor.
   await self.registration.showNotification(`Naksha \u23f1 ${topic}`, {
     body,
     tag: 'naksha-timer',
@@ -202,6 +196,8 @@ async function updateNotification() {
     requireInteraction: true,
     vibrate: [200, 100, 200],
     actions,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     data: { type: 'timer' },
   });
 }
@@ -213,10 +209,8 @@ self.addEventListener('message', async (event) => {
     timerData = { ...payload, isPaused: false };
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
-
     updateNotification();
     notificationInterval = setInterval(updateNotification, 60000);
-
     let minuteCount = 0;
     timerInterval = setInterval(() => {
       minuteCount++;
@@ -226,6 +220,7 @@ self.addEventListener('message', async (event) => {
           tag: 'naksha-milestone',
           silent: false,
           vibrate: [200, 100, 200],
+          icon: '/icon-192.png',
         });
       }
     }, 60000);
@@ -251,9 +246,7 @@ self.addEventListener('message', async (event) => {
     timerData = null;
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
-    self.registration
-      .getNotifications({ tag: 'naksha-timer' })
-      .then((ns) => ns.forEach((n) => n.close()));
+    self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
   }
 
   if (type === 'TIMER_UPDATE') {
@@ -264,26 +257,27 @@ self.addEventListener('message', async (event) => {
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
     timerData = null;
-    self.registration
-      .getNotifications({ tag: 'naksha-timer' })
-      .then((ns) => ns.forEach((n) => n.close()));
-
+    self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
     await self.registration.showNotification('Naksha \u23f1 Session Complete! \ud83c\udf89', {
       body: 'Great work! Your study session is done.',
       tag: 'timer-done',
       renotify: true,
       requireInteraction: true,
       vibrate: [200, 100, 200],
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
       data: { type: 'timer-complete' },
     });
   }
 
   if (type === 'TEST_NOTIFICATION') {
     await self.registration.showNotification('Naksha \ud83d\udd14 Test Notification', {
-      body: 'Notifications are working correctly! Your timer will appear here.',
+      body: 'Notifications are working! Your timer will appear here.',
       tag: 'naksha-test',
       renotify: true,
       vibrate: [200, 100, 200],
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
     });
   }
 
@@ -298,6 +292,7 @@ self.addEventListener('message', async (event) => {
           tag: `alarm-${id}`,
           requireInteraction: true,
           vibrate: [200, 100, 200],
+          icon: '/icon-192.png',
           data: { type: 'alarm', id },
         });
         delete scheduledAlarms[id];
@@ -318,10 +313,7 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   if (event.action === 'pause') {
-    if (timerData) {
-      timerData.isPaused = true;
-      timerData.elapsed = getElapsed();
-    }
+    if (timerData) { timerData.isPaused = true; timerData.elapsed = getElapsed(); }
     self.clients.matchAll({ type: 'window' }).then((clients) => {
       clients.forEach((c) => c.postMessage({ type: 'PAUSE_FROM_SW' }));
     });
@@ -330,10 +322,7 @@ self.addEventListener('notificationclick', (event) => {
   }
 
   if (event.action === 'resume') {
-    if (timerData) {
-      timerData.isPaused = false;
-      timerData.startTime = Date.now();
-    }
+    if (timerData) { timerData.isPaused = false; timerData.startTime = Date.now(); }
     self.clients.matchAll({ type: 'window' }).then((clients) => {
       clients.forEach((c) => c.postMessage({ type: 'RESUME_FROM_SW' }));
     });
@@ -352,23 +341,15 @@ self.addEventListener('notificationclick', (event) => {
   }
 
   event.waitUntil(
-    self.clients
-      .matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clients) => {
-        if (clients.length > 0) {
-          clients[0].focus();
-        } else {
-          self.clients.openWindow('/');
-        }
-      })
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      if (clients.length > 0) { clients[0].focus(); }
+      else { self.clients.openWindow('/'); }
+    })
   );
 });
 
-// Re-show notification 15s after user swipes it away while timer is running
 self.addEventListener('notificationclose', (event) => {
   if (event.notification.tag === 'naksha-timer' && timerData) {
-    setTimeout(() => {
-      if (timerData) updateNotification();
-    }, 15000);
+    setTimeout(() => { if (timerData) updateNotification(); }, 15000);
   }
 });

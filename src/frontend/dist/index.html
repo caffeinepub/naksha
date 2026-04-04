@@ -2,16 +2,56 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#35BDF3" />
+
+    <!-- PWA / Native-feel viewport -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+
+    <!-- Theme colors -->
+    <meta name="theme-color" content="#0a0f0c" />
+    <meta name="msapplication-TileColor" content="#0a0f0c" />
+
+    <!-- iOS PWA full-screen -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Naksha" />
-    <meta name="description" content="Your Time. Your Orbit. - A study timer PWA" />
+
+    <!-- Android PWA -->
+    <meta name="mobile-web-app-capable" content="yes" />
+
+    <!-- SEO / description -->
+    <meta name="description" content="Your Time. Your Orbit. — A study timer and productivity app." />
+    <meta name="application-name" content="Naksha" />
+
+    <!-- Manifest -->
     <link rel="manifest" href="/manifest.json" />
-    <title>Naksha 🧭</title>
-    <script type="module" crossorigin src="/assets/index-BZCOw1-U.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DjJCgJPB.css">
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
+
+    <title>Naksha</title>
+
+    <!-- Prevent flash of white on startup -->
+    <style>
+      html, body {
+        background: #0a0f0c;
+        margin: 0;
+        padding: 0;
+      }
+      /* Fixed shell — clips nothing, just provides the container */
+      #root {
+        position: fixed;
+        inset: 0;
+        height: 100dvh;
+        overflow: hidden;
+        background: #0a0f0c;
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-B0exJhYK.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DstZRc3a.css">
   </head>
   <body>
     <div id="root"></div>

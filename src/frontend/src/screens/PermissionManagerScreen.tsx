@@ -136,8 +136,13 @@ const PermissionManagerScreen: FC<Props> = ({ onDismiss }) => {
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        justifyContent: "center",
-        padding: "0 24px",
+        justifyContent: "flex-start",
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
+        paddingBottom: "max(env(safe-area-inset-bottom, 80px), 80px)",
+        padding:
+          "env(safe-area-inset-top, 0px) 24px max(env(safe-area-inset-bottom, 80px), 80px)",
+        paddingTop: "max(env(safe-area-inset-top, 60px), 60px)",
       }}
     >
       {/* Close */}

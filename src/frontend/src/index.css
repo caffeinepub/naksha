@@ -159,6 +159,9 @@
 }
 
 @keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
   to {
     transform: rotate(360deg);
   }
@@ -177,18 +180,199 @@
   }
 }
 
+/* ===========================
+   PWA NATIVE-FEEL ADDITIONS
+   =========================== */
+
+/* Full-screen layout using dynamic viewport height */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
+/* Fixed root shell — clips overflow, never scrolls itself */
+#root {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* Safe area padding helpers */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.safe-insets {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+}
+
+/* Native-feel: no tap highlight, no text selection on interactive elements */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+[role="button"],
+.nav-item {
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+nav,
+.bottom-nav {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Page transition animations */
+@keyframes slide-up-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes slide-down-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+.page-enter {
+  animation: slide-up-in 300ms ease forwards;
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+.page-exit {
+  animation: slide-down-out 300ms ease forwards;
+}
+
+/* GPU acceleration for all transitions — prevents jank on older Android */
+[class*="slide-"],
+[class*="page-"],
+.bottom-nav-item {
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+/* Overlay/modal full-screen */
+.modal-fullscreen {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  z-index: 9999;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* === Splash screen === */
+@keyframes splash-fade-out {
+  0% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  z-index: 99999;
+  background: #0a0f0c;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+}
+
+.splash-screen.hiding {
+  animation: splash-fade-out 600ms ease forwards;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+/* Icon wrapper with glow behind it */
+.splash-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.splash-glow-ring {
+  position: absolute;
+  inset: -16px;
+  border-radius: 40px;
+  background: radial-gradient(
+    circle,
+    rgba(29, 185, 84, 0.35) 0%,
+    rgba(29, 185, 84, 0) 70%
+  );
+  animation: neon-pulse 2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* === Install prompt banner === */
+.install-banner {
+  position: fixed;
+  bottom: calc(80px + env(safe-area-inset-bottom));
+  left: 16px;
+  right: 16px;
+  z-index: 9000;
+  background: linear-gradient(
+    135deg,
+    rgba(29, 185, 84, 0.95),
+    rgba(16, 100, 46, 0.97)
+  );
+  border-radius: 16px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(29, 185, 84, 0.35);
+  animation: slide-up-in 300ms ease;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
 /* === Base styles === */
 * {
   -webkit-tap-highlight-color: transparent;
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
+body {
   margin: 0;
   padding: 0;
-  min-height: 100vh;
   font-family: "DM Sans", "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont,
     sans-serif;
   color: var(--text);

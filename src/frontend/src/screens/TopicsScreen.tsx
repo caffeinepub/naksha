@@ -106,6 +106,14 @@ const TopicsScreen: FC<Props> = ({ onSelectTopic }) => {
   const [newTopicName, setNewTopicName] = useState("");
 
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+
+  // Virtual windowing constants for subjects grid (2-column, ~162px per row)
+  const CARD_HEIGHT = 162; // 150px card + 12px gap
+  const COLS = 2;
+  const OVERSCAN = 2;
+  const windowHeight = 700; // approximate visible area height
 
   useEffect(() => {
     const handler = (e: MouseEvent | TouchEvent) => {
@@ -315,770 +323,490 @@ const TopicsScreen: FC<Props> = ({ onSelectTopic }) => {
 
   return (
     <div
+      ref={scrollContainerRef}
       style={{
-        minHeight: "100vh",
-        background: palette.bg,
-        paddingBottom: 100,
-        maxWidth: 430,
-        margin: "0 auto",
-        fontFamily: "'DM Sans', sans-serif",
+        height: "100%",
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
+        paddingBottom: "max(env(safe-area-inset-bottom, 80px), 80px)",
       }}
+      onScroll={(e) =>
+        setScrollTop((e.currentTarget as HTMLDivElement).scrollTop)
+      }
     >
-      {/* Header */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "20px 16px 16px",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          minHeight: "100%",
+          background: palette.bg,
+          paddingBottom: 0,
+          maxWidth: 430,
+          margin: "0 auto",
+          fontFamily: "'DM Sans', sans-serif",
         }}
       >
-        <div>
-          <h2
+        {/* Naksha wordmark — minimal, centered, above content */}
+        <div
+          style={{
+            textAlign: "center",
+            padding: "env(safe-area-inset-top, 16px) 0 8px",
+          }}
+        >
+          <span
             style={{
-              fontSize: 22,
-              fontWeight: 800,
-              color: palette.text,
-              margin: 0,
+              fontSize: 13,
+              fontWeight: 700,
+              letterSpacing: "0.25em",
+              textTransform: "uppercase",
+              color: "rgba(255,255,255,0.25)",
+              fontFamily: "'DM Sans', sans-serif",
             }}
           >
-            Topics
-          </h2>
-          <p
-            style={{
-              fontSize: 12,
-              color: palette.textMuted,
-              margin: "2px 0 0",
-            }}
-          >
-            {subjects.length} subjects
-          </p>
+            NAKSHA
+          </span>
         </div>
-        <button
-          type="button"
-          data-ocid="topics.open_modal_button"
-          onClick={() => setShowAddSubject(!showAddSubject)}
+
+        {/* Header */}
+        <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 5,
-            padding: "8px 16px",
-            borderRadius: 50,
-            border: `1px solid ${palette.accent}60`,
-            background: `${palette.accent}14`,
-            color: palette.accent,
-            fontSize: 13,
-            fontWeight: 700,
-            cursor: "pointer",
-            boxShadow: `0 0 10px ${palette.accentGlow}25`,
+            justifyContent: "space-between",
+            padding: "20px 16px 16px",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
           }}
         >
-          <Plus size={14} /> Subject
-        </button>
-      </div>
+          <div>
+            <h2
+              style={{
+                fontSize: 22,
+                fontWeight: 800,
+                color: palette.text,
+                margin: 0,
+              }}
+            >
+              Topics
+            </h2>
+            <p
+              style={{
+                fontSize: 12,
+                color: palette.textMuted,
+                margin: "2px 0 0",
+              }}
+            >
+              {subjects.length} subjects
+            </p>
+          </div>
+          <button
+            type="button"
+            data-ocid="topics.open_modal_button"
+            onClick={() => setShowAddSubject(!showAddSubject)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              padding: "8px 16px",
+              borderRadius: 50,
+              border: `1px solid ${palette.accent}60`,
+              background: `${palette.accent}14`,
+              color: palette.accent,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: "pointer",
+              boxShadow: `0 0 10px ${palette.accentGlow}25`,
+            }}
+          >
+            <Plus size={14} /> Subject
+          </button>
+        </div>
 
-      {/* Add Subject form */}
-      {showAddSubject && (
+        {/* Add Subject form */}
+        {showAddSubject && (
+          <div
+            style={{
+              padding: "14px 16px",
+              background: "rgba(255,255,255,0.04)",
+              borderBottom: "1px solid rgba(255,255,255,0.08)",
+              animation: "slide-up 0.2s ease",
+            }}
+          >
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <input
+                type="text"
+                data-ocid="topics.subject.input"
+                value={newSubjectName}
+                onChange={(e) => setNewSubjectName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddSubject()}
+                placeholder="Subject name..."
+                style={inputStyle}
+                // biome-ignore lint/a11y/noAutofocus: intentional UX
+                autoFocus
+              />
+              <button
+                type="button"
+                data-ocid="topics.subject.submit_button"
+                onClick={handleAddSubject}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${palette.accent}60`,
+                  background: `${palette.accent}18`,
+                  color: palette.accent,
+                  cursor: "pointer",
+                }}
+              >
+                ✓
+              </button>
+              <button
+                type="button"
+                data-ocid="topics.subject.cancel_button"
+                onClick={() => {
+                  setShowAddSubject(false);
+                  setNewSubjectName("");
+                }}
+                style={{
+                  padding: "10px 10px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "transparent",
+                  color: palette.textMuted,
+                  cursor: "pointer",
+                }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {ACCENT_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setNewSubjectColor(c)}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    background: c,
+                    border:
+                      newSubjectColor === c
+                        ? "2px solid #fff"
+                        : "2px solid transparent",
+                    cursor: "pointer",
+                    boxShadow:
+                      newSubjectColor === c
+                        ? `0 0 10px ${c}`
+                        : `0 0 4px ${c}60`,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Subject gallery grid — virtual windowed for performance */}
         <div
           style={{
-            padding: "14px 16px",
-            background: "rgba(255,255,255,0.04)",
-            borderBottom: "1px solid rgba(255,255,255,0.08)",
-            animation: "slide-up 0.2s ease",
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 12,
+            padding: "16px 16px 0",
           }}
         >
-          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-            <input
-              type="text"
-              data-ocid="topics.subject.input"
-              value={newSubjectName}
-              onChange={(e) => setNewSubjectName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddSubject()}
-              placeholder="Subject name..."
-              style={inputStyle}
-              // biome-ignore lint/a11y/noAutofocus: intentional UX
-              autoFocus
-            />
-            <button
-              type="button"
-              data-ocid="topics.subject.submit_button"
-              onClick={handleAddSubject}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 10,
-                border: `1px solid ${palette.accent}60`,
-                background: `${palette.accent}18`,
-                color: palette.accent,
-                cursor: "pointer",
-              }}
-            >
-              ✓
-            </button>
-            <button
-              type="button"
-              data-ocid="topics.subject.cancel_button"
-              onClick={() => {
-                setShowAddSubject(false);
-                setNewSubjectName("");
-              }}
-              style={{
-                padding: "10px 10px",
-                borderRadius: 10,
-                border: "1px solid rgba(255,255,255,0.10)",
-                background: "transparent",
-                color: palette.textMuted,
-                cursor: "pointer",
-              }}
-            >
-              <X size={14} />
-            </button>
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {ACCENT_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setNewSubjectColor(c)}
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "50%",
-                  background: c,
-                  border:
-                    newSubjectColor === c
-                      ? "2px solid #fff"
-                      : "2px solid transparent",
-                  cursor: "pointer",
-                  boxShadow:
-                    newSubjectColor === c ? `0 0 10px ${c}` : `0 0 4px ${c}60`,
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Subject gallery grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 12,
-          padding: "16px 16px 0",
-        }}
-      >
-        {subjects.map((subject, sIdx) => {
-          const isExpanded = expandedSubjects.has(subject.id);
-          const subjectChapters = chapters.filter(
-            (c) => c.subjectId === subject.id,
-          );
-          const studyTime = getSubjectTime(subject.id);
-          const iconEl = SUBJECT_ICONS[sIdx % SUBJECT_ICONS.length];
-
-          return (
-            <div
-              key={subject.id}
-              style={{
-                gridColumn: isExpanded ? "1 / -1" : undefined,
-              }}
-            >
-              {/* Subject card */}
-              {renameState?.type === "subject" &&
-              renameState.id === subject.id ? (
-                <div
-                  style={{
-                    ...glassCard,
-                    padding: "12px",
-                    display: "flex",
-                    gap: 8,
-                    marginBottom: 8,
-                  }}
-                >
-                  <input
-                    value={renameState.value}
-                    onChange={(e) =>
-                      setRenameState({ ...renameState, value: e.target.value })
-                    }
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter")
-                        handleRenameSubject(subject.id, renameState.value);
-                      if (e.key === "Escape") setRenameState(null);
-                    }}
-                    style={inputStyle}
-                    // biome-ignore lint/a11y/noAutofocus: intentional UX
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleRenameSubject(subject.id, renameState.value)
-                    }
-                    style={{
-                      padding: "8px 12px",
-                      borderRadius: 8,
-                      border: `1px solid ${palette.accent}60`,
-                      background: `${palette.accent}18`,
-                      color: palette.accent,
-                      cursor: "pointer",
-                    }}
-                  >
-                    ✓
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRenameState(null)}
-                    style={{
-                      padding: "8px",
-                      borderRadius: 8,
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      background: "transparent",
-                      color: palette.textMuted,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <X size={13} />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  data-ocid={`topics.subject.item.${sIdx + 1}`}
-                  onClick={() => toggleSubject(subject.id)}
-                  onContextMenu={(e) =>
-                    openContextMenu("subject", subject.id, e)
-                  }
-                  onTouchStart={(e) => startLongPress("subject", subject.id, e)}
-                  onTouchEnd={cancelLongPress}
-                  onTouchMove={cancelLongPress}
-                  style={{
-                    width: "100%",
-                    height: 150,
-                    borderRadius: 20,
-                    border: `1px solid ${isExpanded ? `${subject.colorAccent}60` : "rgba(255,255,255,0.08)"}`,
-                    background: `linear-gradient(135deg, ${subject.colorAccent}22 0%, ${subject.colorAccent}08 100%)`,
-                    backdropFilter: "blur(16px)",
-                    WebkitBackdropFilter: "blur(16px)",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    padding: "16px 12px 12px",
-                    boxSizing: "border-box",
-                    transition: "all 0.25s ease",
-                    boxShadow: isExpanded
-                      ? `0 0 20px ${subject.colorAccent}40, 0 0 40px ${subject.colorAccent}20`
-                      : "0 4px 16px rgba(0,0,0,0.3)",
-                    transform: isExpanded ? "scale(1)" : "scale(1)",
-                  }}
-                >
-                  <div
-                    style={{
-                      color: subject.colorAccent,
-                      filter: `drop-shadow(0 0 8px ${subject.colorAccent}80)`,
-                    }}
-                  >
-                    {iconEl}
-                  </div>
-                  <div style={{ textAlign: "center", width: "100%" }}>
+          {/* Top spacer */}
+          {subjects.length > 0 &&
+            (() => {
+              const totalRows = Math.ceil(subjects.length / COLS);
+              const visibleStartRow = Math.max(
+                0,
+                Math.floor(scrollTop / CARD_HEIGHT) - OVERSCAN,
+              );
+              const visibleEndRow = Math.min(
+                totalRows,
+                Math.ceil((scrollTop + windowHeight) / CARD_HEIGHT) + OVERSCAN,
+              );
+              const visibleStart = visibleStartRow * COLS;
+              const visibleEnd = Math.min(
+                subjects.length,
+                visibleEndRow * COLS,
+              );
+              const topSpacerRows = visibleStartRow;
+              const bottomSpacerRows = Math.max(0, totalRows - visibleEndRow);
+              return (
+                <>
+                  {topSpacerRows > 0 && (
                     <div
                       style={{
-                        fontSize: 14,
-                        fontWeight: 700,
-                        color: palette.text,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        maxWidth: "100%",
+                        gridColumn: "1 / -1",
+                        height: topSpacerRows * CARD_HEIGHT,
                       }}
-                    >
-                      {subject.name}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: palette.textMuted,
-                        marginTop: 2,
-                      }}
-                    >
-                      {studyTime > 0
-                        ? formatDuration(studyTime)
-                        : "No sessions yet"}
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                      color: subject.colorAccent,
-                      opacity: 0.7,
-                    }}
-                  >
-                    {isExpanded ? (
-                      <ChevronDown size={14} />
-                    ) : (
-                      <ChevronRight size={14} />
-                    )}
-                  </div>
-                </button>
-              )}
-
-              {/* Context menu */}
-              {contextMenu?.type === "subject" &&
-                contextMenu.id === subject.id && (
-                  <div
-                    data-context-menu
-                    style={{
-                      position: "fixed",
-                      top: contextMenu.y,
-                      left: Math.min(contextMenu.x, window.innerWidth - 160),
-                      background: "rgba(15,15,20,0.95)",
-                      backdropFilter: "blur(20px)",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                      borderRadius: 12,
-                      padding: 6,
-                      zIndex: 300,
-                      minWidth: 150,
-                      boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRenameState({
-                          type: "subject",
-                          id: subject.id,
-                          value: subject.name,
-                        });
-                        setContextMenu(null);
-                      }}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        padding: "9px 14px",
-                        borderRadius: 8,
-                        border: "none",
-                        background: "transparent",
-                        color: palette.text,
-                        fontSize: 14,
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
-                    >
-                      Rename
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteSubject(subject.id)}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        padding: "9px 14px",
-                        borderRadius: 8,
-                        border: "none",
-                        background: "transparent",
-                        color: "#EF4444",
-                        fontSize: 14,
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
-
-              {/* Expanded chapters section */}
-              {isExpanded && (
-                <div style={{ marginTop: 12, animation: "slide-up 0.2s ease" }}>
-                  {/* Add chapter button */}
-                  <div style={{ marginBottom: 8 }}>
-                    {addChapterForSubject === subject.id ? (
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <input
-                          type="text"
-                          value={newChapterName}
-                          onChange={(e) => setNewChapterName(e.target.value)}
-                          onKeyDown={(e) =>
-                            e.key === "Enter" && handleAddChapter(subject.id)
-                          }
-                          placeholder="Chapter name..."
-                          style={inputStyle}
-                          // biome-ignore lint/a11y/noAutofocus: intentional UX
-                          autoFocus
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleAddChapter(subject.id)}
-                          style={{
-                            padding: "8px 12px",
-                            borderRadius: 10,
-                            border: `1px solid ${palette.accent}60`,
-                            background: `${palette.accent}18`,
-                            color: palette.accent,
-                            cursor: "pointer",
-                          }}
-                        >
-                          ✓
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAddChapterForSubject(null)}
-                          style={{
-                            padding: "8px",
-                            borderRadius: 10,
-                            border: "1px solid rgba(255,255,255,0.10)",
-                            background: "transparent",
-                            color: palette.textMuted,
-                            cursor: "pointer",
-                          }}
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setAddChapterForSubject(subject.id)}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 5,
-                          padding: "7px 14px",
-                          borderRadius: 20,
-                          border: "1px dashed rgba(255,255,255,0.15)",
-                          background: "transparent",
-                          color: palette.textMuted,
-                          fontSize: 12,
-                          cursor: "pointer",
-                        }}
-                      >
-                        <Plus size={12} /> Add Chapter
-                      </button>
-                    )}
-                  </div>
-
-                  {subjectChapters.length === 0 && (
-                    <div
-                      style={{
-                        padding: "12px",
-                        color: palette.textMuted,
-                        fontSize: 12,
-                        textAlign: "center",
-                      }}
-                    >
-                      No chapters yet
-                    </div>
+                    />
                   )}
+                  {subjects
+                    .slice(visibleStart, visibleEnd)
+                    .map((subject, relIdx) => {
+                      const sIdx = visibleStart + relIdx;
+                      const isExpanded = expandedSubjects.has(subject.id);
+                      const subjectChapters = chapters.filter(
+                        (c) => c.subjectId === subject.id,
+                      );
+                      const studyTime = getSubjectTime(subject.id);
+                      const iconEl = SUBJECT_ICONS[sIdx % SUBJECT_ICONS.length];
 
-                  {subjectChapters.map((chapter, cIdx) => {
-                    const isChapterExpanded = expandedChapters.has(chapter.id);
-                    const chapterTopics = topics.filter(
-                      (t) => t.chapterId === chapter.id,
-                    );
-                    const chapterTime = getChapterTime(chapter.id);
-
-                    return (
-                      <div key={chapter.id} style={{ marginBottom: 8 }}>
-                        {/* Chapter row */}
-                        {renameState?.type === "chapter" &&
-                        renameState.id === chapter.id ? (
-                          <div
-                            style={{ display: "flex", gap: 8, marginBottom: 4 }}
-                          >
-                            <input
-                              value={renameState.value}
-                              onChange={(e) =>
-                                setRenameState({
-                                  ...renameState,
-                                  value: e.target.value,
-                                })
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter")
-                                  handleRenameChapter(
-                                    chapter.id,
-                                    renameState.value,
-                                  );
-                                if (e.key === "Escape") setRenameState(null);
-                              }}
-                              style={inputStyle}
-                              // biome-ignore lint/a11y/noAutofocus: intentional UX
-                              autoFocus
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                handleRenameChapter(
-                                  chapter.id,
-                                  renameState.value,
-                                )
-                              }
-                              style={{
-                                padding: "8px 12px",
-                                borderRadius: 8,
-                                border: `1px solid ${palette.accent}60`,
-                                background: `${palette.accent}18`,
-                                color: palette.accent,
-                                cursor: "pointer",
-                              }}
-                            >
-                              ✓
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setRenameState(null)}
-                              style={{
-                                padding: "8px",
-                                borderRadius: 8,
-                                border: "1px solid rgba(255,255,255,0.10)",
-                                background: "transparent",
-                                color: palette.textMuted,
-                                cursor: "pointer",
-                              }}
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            data-ocid={`topics.chapter.item.${cIdx + 1}`}
-                            onClick={() => toggleChapter(chapter.id)}
-                            onContextMenu={(e) =>
-                              openContextMenu("chapter", chapter.id, e)
-                            }
-                            onTouchStart={(e) =>
-                              startLongPress("chapter", chapter.id, e)
-                            }
-                            onTouchEnd={cancelLongPress}
-                            onTouchMove={cancelLongPress}
-                            style={{
-                              width: "100%",
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                              padding: "11px 14px",
-                              borderRadius: 12,
-                              border: "1px solid rgba(255,255,255,0.08)",
-                              background: "rgba(255,255,255,0.04)",
-                              backdropFilter: "blur(8px)",
-                              cursor: "pointer",
-                              textAlign: "left",
-                              boxSizing: "border-box",
-                              borderLeft: `3px solid ${subject.colorAccent}60`,
-                            }}
-                          >
-                            {isChapterExpanded ? (
-                              <ChevronDown
-                                size={14}
-                                color={palette.textMuted}
-                              />
-                            ) : (
-                              <ChevronRight
-                                size={14}
-                                color={palette.textMuted}
-                              />
-                            )}
-                            <span
-                              style={{
-                                flex: 1,
-                                fontSize: 14,
-                                fontWeight: 600,
-                                color: palette.text,
-                              }}
-                            >
-                              {chapter.name}
-                            </span>
-                            <span
-                              style={{ fontSize: 11, color: palette.textMuted }}
-                            >
-                              {chapterTime > 0
-                                ? formatDuration(chapterTime)
-                                : ""}
-                            </span>
-                          </button>
-                        )}
-
-                        {contextMenu?.type === "chapter" &&
-                          contextMenu.id === chapter.id && (
+                      return (
+                        <div
+                          key={subject.id}
+                          style={{
+                            gridColumn: isExpanded ? "1 / -1" : undefined,
+                          }}
+                        >
+                          {/* Subject card */}
+                          {renameState?.type === "subject" &&
+                          renameState.id === subject.id ? (
                             <div
-                              data-context-menu
                               style={{
-                                position: "fixed",
-                                top: contextMenu.y,
-                                left: Math.min(
-                                  contextMenu.x,
-                                  window.innerWidth - 160,
-                                ),
-                                background: "rgba(15,15,20,0.95)",
-                                backdropFilter: "blur(20px)",
-                                border: "1px solid rgba(255,255,255,0.15)",
-                                borderRadius: 12,
-                                padding: 6,
-                                zIndex: 300,
-                                minWidth: 150,
-                                boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+                                ...glassCard,
+                                padding: "12px",
+                                display: "flex",
+                                gap: 8,
+                                marginBottom: 8,
                               }}
                             >
-                              <button
-                                type="button"
-                                onClick={() => {
+                              <input
+                                value={renameState.value}
+                                onChange={(e) =>
                                   setRenameState({
-                                    type: "chapter",
-                                    id: chapter.id,
-                                    value: chapter.name,
-                                  });
-                                  setContextMenu(null);
+                                    ...renameState,
+                                    value: e.target.value,
+                                  })
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter")
+                                    handleRenameSubject(
+                                      subject.id,
+                                      renameState.value,
+                                    );
+                                  if (e.key === "Escape") setRenameState(null);
                                 }}
-                                style={{
-                                  display: "block",
-                                  width: "100%",
-                                  padding: "9px 14px",
-                                  borderRadius: 8,
-                                  border: "none",
-                                  background: "transparent",
-                                  color: palette.text,
-                                  fontSize: 14,
-                                  cursor: "pointer",
-                                  textAlign: "left",
-                                }}
-                              >
-                                Rename
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteChapter(chapter.id)}
-                                style={{
-                                  display: "block",
-                                  width: "100%",
-                                  padding: "9px 14px",
-                                  borderRadius: 8,
-                                  border: "none",
-                                  background: "transparent",
-                                  color: "#EF4444",
-                                  fontSize: 14,
-                                  cursor: "pointer",
-                                  textAlign: "left",
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )}
-
-                        {/* Topics list */}
-                        {isChapterExpanded && (
-                          <div style={{ paddingLeft: 16, marginTop: 4 }}>
-                            {addTopicForChapter === chapter.id ? (
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: 8,
-                                  marginBottom: 6,
-                                }}
-                              >
-                                <input
-                                  type="text"
-                                  value={newTopicName}
-                                  onChange={(e) =>
-                                    setNewTopicName(e.target.value)
-                                  }
-                                  onKeyDown={(e) =>
-                                    e.key === "Enter" &&
-                                    handleAddTopic(chapter.id, subject.id)
-                                  }
-                                  placeholder="Topic name..."
-                                  style={inputStyle}
-                                  // biome-ignore lint/a11y/noAutofocus: intentional UX
-                                  autoFocus
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleAddTopic(chapter.id, subject.id)
-                                  }
-                                  style={{
-                                    padding: "8px 12px",
-                                    borderRadius: 10,
-                                    border: `1px solid ${palette.accent}60`,
-                                    background: `${palette.accent}18`,
-                                    color: palette.accent,
-                                    cursor: "pointer",
-                                  }}
-                                >
-                                  ✓
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setAddTopicForChapter(null)}
-                                  style={{
-                                    padding: "8px",
-                                    borderRadius: 10,
-                                    border: "1px solid rgba(255,255,255,0.10)",
-                                    background: "transparent",
-                                    color: palette.textMuted,
-                                    cursor: "pointer",
-                                  }}
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-                            ) : (
+                                style={inputStyle}
+                                // biome-ignore lint/a11y/noAutofocus: intentional UX
+                                autoFocus
+                              />
                               <button
                                 type="button"
                                 onClick={() =>
-                                  setAddTopicForChapter(chapter.id)
+                                  handleRenameSubject(
+                                    subject.id,
+                                    renameState.value,
+                                  )
                                 }
+                                style={{
+                                  padding: "8px 12px",
+                                  borderRadius: 8,
+                                  border: `1px solid ${palette.accent}60`,
+                                  background: `${palette.accent}18`,
+                                  color: palette.accent,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                ✓
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRenameState(null)}
+                                style={{
+                                  padding: "8px",
+                                  borderRadius: 8,
+                                  border: "1px solid rgba(255,255,255,0.10)",
+                                  background: "transparent",
+                                  color: palette.textMuted,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <X size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              data-ocid={`topics.subject.item.${sIdx + 1}`}
+                              onClick={() => toggleSubject(subject.id)}
+                              onContextMenu={(e) =>
+                                openContextMenu("subject", subject.id, e)
+                              }
+                              onTouchStart={(e) =>
+                                startLongPress("subject", subject.id, e)
+                              }
+                              onTouchEnd={cancelLongPress}
+                              onTouchMove={cancelLongPress}
+                              style={{
+                                width: "100%",
+                                height: 150,
+                                borderRadius: 20,
+                                border: `1px solid ${isExpanded ? `${subject.colorAccent}60` : "rgba(255,255,255,0.08)"}`,
+                                background: `linear-gradient(135deg, ${subject.colorAccent}22 0%, ${subject.colorAccent}08 100%)`,
+                                backdropFilter: "blur(16px)",
+                                WebkitBackdropFilter: "blur(16px)",
+                                cursor: "pointer",
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 8,
+                                padding: "16px 12px 12px",
+                                boxSizing: "border-box",
+                                transition: "all 0.25s ease",
+                                boxShadow: isExpanded
+                                  ? `0 0 20px ${subject.colorAccent}40, 0 0 40px ${subject.colorAccent}20`
+                                  : "0 4px 16px rgba(0,0,0,0.3)",
+                                transform: isExpanded ? "scale(1)" : "scale(1)",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  color: subject.colorAccent,
+                                  filter: `drop-shadow(0 0 8px ${subject.colorAccent}80)`,
+                                }}
+                              >
+                                {iconEl}
+                              </div>
+                              <div
+                                style={{ textAlign: "center", width: "100%" }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    color: palette.text,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                    maxWidth: "100%",
+                                  }}
+                                >
+                                  {subject.name}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 11,
+                                    color: palette.textMuted,
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {studyTime > 0
+                                    ? formatDuration(studyTime)
+                                    : "No sessions yet"}
+                                </div>
+                              </div>
+                              <div
                                 style={{
                                   display: "flex",
                                   alignItems: "center",
-                                  gap: 5,
-                                  padding: "6px 12px",
-                                  borderRadius: 20,
-                                  border: "1px dashed rgba(255,255,255,0.12)",
-                                  background: "transparent",
-                                  color: palette.textMuted,
-                                  fontSize: 12,
-                                  cursor: "pointer",
-                                  marginBottom: 6,
+                                  gap: 4,
+                                  color: subject.colorAccent,
+                                  opacity: 0.7,
                                 }}
                               >
-                                <Plus size={11} /> Add Topic
-                              </button>
+                                {isExpanded ? (
+                                  <ChevronDown size={14} />
+                                ) : (
+                                  <ChevronRight size={14} />
+                                )}
+                              </div>
+                            </button>
+                          )}
+
+                          {/* Context menu */}
+                          {contextMenu?.type === "subject" &&
+                            contextMenu.id === subject.id && (
+                              <div
+                                data-context-menu
+                                style={{
+                                  position: "fixed",
+                                  top: contextMenu.y,
+                                  left: Math.min(
+                                    contextMenu.x,
+                                    window.innerWidth - 160,
+                                  ),
+                                  background: "rgba(15,15,20,0.95)",
+                                  backdropFilter: "blur(20px)",
+                                  border: "1px solid rgba(255,255,255,0.15)",
+                                  borderRadius: 12,
+                                  padding: 6,
+                                  zIndex: 300,
+                                  minWidth: 150,
+                                  boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRenameState({
+                                      type: "subject",
+                                      id: subject.id,
+                                      value: subject.name,
+                                    });
+                                    setContextMenu(null);
+                                  }}
+                                  style={{
+                                    display: "block",
+                                    width: "100%",
+                                    padding: "9px 14px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    background: "transparent",
+                                    color: palette.text,
+                                    fontSize: 14,
+                                    cursor: "pointer",
+                                    textAlign: "left",
+                                  }}
+                                >
+                                  Rename
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleDeleteSubject(subject.id)
+                                  }
+                                  style={{
+                                    display: "block",
+                                    width: "100%",
+                                    padding: "9px 14px",
+                                    borderRadius: 8,
+                                    border: "none",
+                                    background: "transparent",
+                                    color: "#EF4444",
+                                    fontSize: 14,
+                                    cursor: "pointer",
+                                    textAlign: "left",
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
                             )}
 
-                            {chapterTopics.map((topic, tIdx) => (
-                              <div
-                                key={topic.id}
-                                style={{
-                                  position: "relative",
-                                  marginBottom: 4,
-                                }}
-                              >
-                                {renameState?.type === "topic" &&
-                                renameState.id === topic.id ? (
+                          {/* Expanded chapters section */}
+                          {isExpanded && (
+                            <div
+                              style={{
+                                marginTop: 12,
+                                animation: "slide-up 0.2s ease",
+                              }}
+                            >
+                              {/* Add chapter button */}
+                              <div style={{ marginBottom: 8 }}>
+                                {addChapterForSubject === subject.id ? (
                                   <div style={{ display: "flex", gap: 8 }}>
                                     <input
-                                      value={renameState.value}
+                                      type="text"
+                                      value={newChapterName}
                                       onChange={(e) =>
-                                        setRenameState({
-                                          ...renameState,
-                                          value: e.target.value,
-                                        })
+                                        setNewChapterName(e.target.value)
                                       }
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter")
-                                          handleRenameTopic(
-                                            topic.id,
-                                            renameState.value,
-                                          );
-                                        if (e.key === "Escape")
-                                          setRenameState(null);
-                                      }}
+                                      onKeyDown={(e) =>
+                                        e.key === "Enter" &&
+                                        handleAddChapter(subject.id)
+                                      }
+                                      placeholder="Chapter name..."
                                       style={inputStyle}
                                       // biome-ignore lint/a11y/noAutofocus: intentional UX
                                       autoFocus
@@ -1086,14 +814,11 @@ const TopicsScreen: FC<Props> = ({ onSelectTopic }) => {
                                     <button
                                       type="button"
                                       onClick={() =>
-                                        handleRenameTopic(
-                                          topic.id,
-                                          renameState.value,
-                                        )
+                                        handleAddChapter(subject.id)
                                       }
                                       style={{
                                         padding: "8px 12px",
-                                        borderRadius: 8,
+                                        borderRadius: 10,
                                         border: `1px solid ${palette.accent}60`,
                                         background: `${palette.accent}18`,
                                         color: palette.accent,
@@ -1104,10 +829,12 @@ const TopicsScreen: FC<Props> = ({ onSelectTopic }) => {
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => setRenameState(null)}
+                                      onClick={() =>
+                                        setAddChapterForSubject(null)
+                                      }
                                       style={{
                                         padding: "8px",
-                                        borderRadius: 8,
+                                        borderRadius: 10,
                                         border:
                                           "1px solid rgba(255,255,255,0.10)",
                                         background: "transparent",
@@ -1121,191 +848,655 @@ const TopicsScreen: FC<Props> = ({ onSelectTopic }) => {
                                 ) : (
                                   <button
                                     type="button"
-                                    data-ocid={`topics.topic.item.${tIdx + 1}`}
-                                    onClick={() => onSelectTopic(topic)}
-                                    onContextMenu={(e) =>
-                                      openContextMenu("topic", topic.id, e)
+                                    onClick={() =>
+                                      setAddChapterForSubject(subject.id)
                                     }
-                                    onTouchStart={(e) =>
-                                      startLongPress("topic", topic.id, e)
-                                    }
-                                    onTouchEnd={cancelLongPress}
-                                    onTouchMove={cancelLongPress}
                                     style={{
-                                      width: "100%",
                                       display: "flex",
                                       alignItems: "center",
-                                      gap: 10,
-                                      padding: "10px 12px",
-                                      borderRadius: 10,
+                                      gap: 5,
+                                      padding: "7px 14px",
+                                      borderRadius: 20,
                                       border:
-                                        "1px solid rgba(255,255,255,0.07)",
-                                      background: "rgba(255,255,255,0.03)",
+                                        "1px dashed rgba(255,255,255,0.15)",
+                                      background: "transparent",
+                                      color: palette.textMuted,
+                                      fontSize: 12,
                                       cursor: "pointer",
-                                      textAlign: "left",
-                                      boxSizing: "border-box",
                                     }}
                                   >
-                                    <span
-                                      style={{
-                                        width: 7,
-                                        height: 7,
-                                        borderRadius: "50%",
-                                        background: subject.colorAccent,
-                                        flexShrink: 0,
-                                        boxShadow: `0 0 5px ${subject.colorAccent}`,
-                                      }}
-                                    />
-                                    <span
-                                      style={{
-                                        flex: 1,
-                                        fontSize: 13,
-                                        color: palette.text,
-                                      }}
-                                    >
-                                      {topic.name}
-                                    </span>
-                                    <span
-                                      style={{
-                                        fontSize: 11,
-                                        color: palette.textMuted,
-                                      }}
-                                    >
-                                      {getStudyTime(topic.id) > 0
-                                        ? formatDuration(getStudyTime(topic.id))
-                                        : ""}
-                                    </span>
+                                    <Plus size={12} /> Add Chapter
                                   </button>
                                 )}
-
-                                {contextMenu?.type === "topic" &&
-                                  contextMenu.id === topic.id && (
-                                    <div
-                                      data-context-menu
-                                      style={{
-                                        position: "fixed",
-                                        top: contextMenu.y,
-                                        left: Math.min(
-                                          contextMenu.x,
-                                          window.innerWidth - 160,
-                                        ),
-                                        background: "rgba(15,15,20,0.95)",
-                                        backdropFilter: "blur(20px)",
-                                        border:
-                                          "1px solid rgba(255,255,255,0.15)",
-                                        borderRadius: 12,
-                                        padding: 6,
-                                        zIndex: 300,
-                                        minWidth: 150,
-                                        boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
-                                      }}
-                                    >
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setRenameState({
-                                            type: "topic",
-                                            id: topic.id,
-                                            value: topic.name,
-                                          });
-                                          setContextMenu(null);
-                                        }}
-                                        style={{
-                                          display: "block",
-                                          width: "100%",
-                                          padding: "9px 14px",
-                                          borderRadius: 8,
-                                          border: "none",
-                                          background: "transparent",
-                                          color: palette.text,
-                                          fontSize: 14,
-                                          cursor: "pointer",
-                                          textAlign: "left",
-                                        }}
-                                      >
-                                        Rename
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleDeleteTopic(topic.id)
-                                        }
-                                        style={{
-                                          display: "block",
-                                          width: "100%",
-                                          padding: "9px 14px",
-                                          borderRadius: 8,
-                                          border: "none",
-                                          background: "transparent",
-                                          color: "#EF4444",
-                                          fontSize: 14,
-                                          cursor: "pointer",
-                                          textAlign: "left",
-                                        }}
-                                      >
-                                        Delete
-                                      </button>
-                                    </div>
-                                  )}
                               </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
 
-        {/* Add new subject card (dashed) */}
-        <button
-          type="button"
-          data-ocid="topics.add_subject.button"
-          onClick={() => setShowAddSubject(true)}
-          style={{
-            height: 150,
-            borderRadius: 20,
-            border: "1.5px dashed rgba(255,255,255,0.18)",
-            background: "rgba(255,255,255,0.02)",
-            cursor: "pointer",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            color: "rgba(255,255,255,0.30)",
-          }}
-        >
-          <Plus size={28} strokeWidth={1.5} />
-          <span style={{ fontSize: 13 }}>Add Subject</span>
-        </button>
-      </div>
+                              {subjectChapters.length === 0 && (
+                                <div
+                                  style={{
+                                    padding: "12px",
+                                    color: palette.textMuted,
+                                    fontSize: 12,
+                                    textAlign: "center",
+                                  }}
+                                >
+                                  No chapters yet
+                                </div>
+                              )}
 
-      {subjects.length === 0 && (
-        <div
-          data-ocid="topics.empty_state"
-          style={{
-            textAlign: "center",
-            padding: "60px 24px",
-            color: "rgba(255,255,255,0.3)",
-          }}
-        >
-          <BookOpen
-            size={48}
-            strokeWidth={1}
-            style={{ marginBottom: 12, opacity: 0.4 }}
-          />
-          <p style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px" }}>
-            No subjects yet
-          </p>
-          <p style={{ fontSize: 13, margin: 0 }}>
-            Tap "+Subject" to create your first subject
-          </p>
+                              {subjectChapters.map((chapter, cIdx) => {
+                                const isChapterExpanded = expandedChapters.has(
+                                  chapter.id,
+                                );
+                                const chapterTopics = topics.filter(
+                                  (t) => t.chapterId === chapter.id,
+                                );
+                                const chapterTime = getChapterTime(chapter.id);
+
+                                return (
+                                  <div
+                                    key={chapter.id}
+                                    style={{ marginBottom: 8 }}
+                                  >
+                                    {/* Chapter row */}
+                                    {renameState?.type === "chapter" &&
+                                    renameState.id === chapter.id ? (
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          gap: 8,
+                                          marginBottom: 4,
+                                        }}
+                                      >
+                                        <input
+                                          value={renameState.value}
+                                          onChange={(e) =>
+                                            setRenameState({
+                                              ...renameState,
+                                              value: e.target.value,
+                                            })
+                                          }
+                                          onKeyDown={(e) => {
+                                            if (e.key === "Enter")
+                                              handleRenameChapter(
+                                                chapter.id,
+                                                renameState.value,
+                                              );
+                                            if (e.key === "Escape")
+                                              setRenameState(null);
+                                          }}
+                                          style={inputStyle}
+                                          // biome-ignore lint/a11y/noAutofocus: intentional UX
+                                          autoFocus
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleRenameChapter(
+                                              chapter.id,
+                                              renameState.value,
+                                            )
+                                          }
+                                          style={{
+                                            padding: "8px 12px",
+                                            borderRadius: 8,
+                                            border: `1px solid ${palette.accent}60`,
+                                            background: `${palette.accent}18`,
+                                            color: palette.accent,
+                                            cursor: "pointer",
+                                          }}
+                                        >
+                                          ✓
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setRenameState(null)}
+                                          style={{
+                                            padding: "8px",
+                                            borderRadius: 8,
+                                            border:
+                                              "1px solid rgba(255,255,255,0.10)",
+                                            background: "transparent",
+                                            color: palette.textMuted,
+                                            cursor: "pointer",
+                                          }}
+                                        >
+                                          <X size={12} />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        data-ocid={`topics.chapter.item.${cIdx + 1}`}
+                                        onClick={() =>
+                                          toggleChapter(chapter.id)
+                                        }
+                                        onContextMenu={(e) =>
+                                          openContextMenu(
+                                            "chapter",
+                                            chapter.id,
+                                            e,
+                                          )
+                                        }
+                                        onTouchStart={(e) =>
+                                          startLongPress(
+                                            "chapter",
+                                            chapter.id,
+                                            e,
+                                          )
+                                        }
+                                        onTouchEnd={cancelLongPress}
+                                        onTouchMove={cancelLongPress}
+                                        style={{
+                                          width: "100%",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 10,
+                                          padding: "11px 14px",
+                                          borderRadius: 12,
+                                          border:
+                                            "1px solid rgba(255,255,255,0.08)",
+                                          background: "rgba(255,255,255,0.04)",
+                                          backdropFilter: "blur(8px)",
+                                          cursor: "pointer",
+                                          textAlign: "left",
+                                          boxSizing: "border-box",
+                                          borderLeft: `3px solid ${subject.colorAccent}60`,
+                                        }}
+                                      >
+                                        {isChapterExpanded ? (
+                                          <ChevronDown
+                                            size={14}
+                                            color={palette.textMuted}
+                                          />
+                                        ) : (
+                                          <ChevronRight
+                                            size={14}
+                                            color={palette.textMuted}
+                                          />
+                                        )}
+                                        <span
+                                          style={{
+                                            flex: 1,
+                                            fontSize: 14,
+                                            fontWeight: 600,
+                                            color: palette.text,
+                                          }}
+                                        >
+                                          {chapter.name}
+                                        </span>
+                                        <span
+                                          style={{
+                                            fontSize: 11,
+                                            color: palette.textMuted,
+                                          }}
+                                        >
+                                          {chapterTime > 0
+                                            ? formatDuration(chapterTime)
+                                            : ""}
+                                        </span>
+                                      </button>
+                                    )}
+
+                                    {contextMenu?.type === "chapter" &&
+                                      contextMenu.id === chapter.id && (
+                                        <div
+                                          data-context-menu
+                                          style={{
+                                            position: "fixed",
+                                            top: contextMenu.y,
+                                            left: Math.min(
+                                              contextMenu.x,
+                                              window.innerWidth - 160,
+                                            ),
+                                            background: "rgba(15,15,20,0.95)",
+                                            backdropFilter: "blur(20px)",
+                                            border:
+                                              "1px solid rgba(255,255,255,0.15)",
+                                            borderRadius: 12,
+                                            padding: 6,
+                                            zIndex: 300,
+                                            minWidth: 150,
+                                            boxShadow:
+                                              "0 8px 32px rgba(0,0,0,0.6)",
+                                          }}
+                                        >
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setRenameState({
+                                                type: "chapter",
+                                                id: chapter.id,
+                                                value: chapter.name,
+                                              });
+                                              setContextMenu(null);
+                                            }}
+                                            style={{
+                                              display: "block",
+                                              width: "100%",
+                                              padding: "9px 14px",
+                                              borderRadius: 8,
+                                              border: "none",
+                                              background: "transparent",
+                                              color: palette.text,
+                                              fontSize: 14,
+                                              cursor: "pointer",
+                                              textAlign: "left",
+                                            }}
+                                          >
+                                            Rename
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleDeleteChapter(chapter.id)
+                                            }
+                                            style={{
+                                              display: "block",
+                                              width: "100%",
+                                              padding: "9px 14px",
+                                              borderRadius: 8,
+                                              border: "none",
+                                              background: "transparent",
+                                              color: "#EF4444",
+                                              fontSize: 14,
+                                              cursor: "pointer",
+                                              textAlign: "left",
+                                            }}
+                                          >
+                                            Delete
+                                          </button>
+                                        </div>
+                                      )}
+
+                                    {/* Topics list */}
+                                    {isChapterExpanded && (
+                                      <div
+                                        style={{
+                                          paddingLeft: 16,
+                                          marginTop: 4,
+                                        }}
+                                      >
+                                        {addTopicForChapter === chapter.id ? (
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              gap: 8,
+                                              marginBottom: 6,
+                                            }}
+                                          >
+                                            <input
+                                              type="text"
+                                              value={newTopicName}
+                                              onChange={(e) =>
+                                                setNewTopicName(e.target.value)
+                                              }
+                                              onKeyDown={(e) =>
+                                                e.key === "Enter" &&
+                                                handleAddTopic(
+                                                  chapter.id,
+                                                  subject.id,
+                                                )
+                                              }
+                                              placeholder="Topic name..."
+                                              style={inputStyle}
+                                              // biome-ignore lint/a11y/noAutofocus: intentional UX
+                                              autoFocus
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleAddTopic(
+                                                  chapter.id,
+                                                  subject.id,
+                                                )
+                                              }
+                                              style={{
+                                                padding: "8px 12px",
+                                                borderRadius: 10,
+                                                border: `1px solid ${palette.accent}60`,
+                                                background: `${palette.accent}18`,
+                                                color: palette.accent,
+                                                cursor: "pointer",
+                                              }}
+                                            >
+                                              ✓
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setAddTopicForChapter(null)
+                                              }
+                                              style={{
+                                                padding: "8px",
+                                                borderRadius: 10,
+                                                border:
+                                                  "1px solid rgba(255,255,255,0.10)",
+                                                background: "transparent",
+                                                color: palette.textMuted,
+                                                cursor: "pointer",
+                                              }}
+                                            >
+                                              <X size={12} />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setAddTopicForChapter(chapter.id)
+                                            }
+                                            style={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 5,
+                                              padding: "6px 12px",
+                                              borderRadius: 20,
+                                              border:
+                                                "1px dashed rgba(255,255,255,0.12)",
+                                              background: "transparent",
+                                              color: palette.textMuted,
+                                              fontSize: 12,
+                                              cursor: "pointer",
+                                              marginBottom: 6,
+                                            }}
+                                          >
+                                            <Plus size={11} /> Add Topic
+                                          </button>
+                                        )}
+
+                                        {chapterTopics.map((topic, tIdx) => (
+                                          <div
+                                            key={topic.id}
+                                            style={{
+                                              position: "relative",
+                                              marginBottom: 4,
+                                            }}
+                                          >
+                                            {renameState?.type === "topic" &&
+                                            renameState.id === topic.id ? (
+                                              <div
+                                                style={{
+                                                  display: "flex",
+                                                  gap: 8,
+                                                }}
+                                              >
+                                                <input
+                                                  value={renameState.value}
+                                                  onChange={(e) =>
+                                                    setRenameState({
+                                                      ...renameState,
+                                                      value: e.target.value,
+                                                    })
+                                                  }
+                                                  onKeyDown={(e) => {
+                                                    if (e.key === "Enter")
+                                                      handleRenameTopic(
+                                                        topic.id,
+                                                        renameState.value,
+                                                      );
+                                                    if (e.key === "Escape")
+                                                      setRenameState(null);
+                                                  }}
+                                                  style={inputStyle}
+                                                  // biome-ignore lint/a11y/noAutofocus: intentional UX
+                                                  autoFocus
+                                                />
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    handleRenameTopic(
+                                                      topic.id,
+                                                      renameState.value,
+                                                    )
+                                                  }
+                                                  style={{
+                                                    padding: "8px 12px",
+                                                    borderRadius: 8,
+                                                    border: `1px solid ${palette.accent}60`,
+                                                    background: `${palette.accent}18`,
+                                                    color: palette.accent,
+                                                    cursor: "pointer",
+                                                  }}
+                                                >
+                                                  ✓
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setRenameState(null)
+                                                  }
+                                                  style={{
+                                                    padding: "8px",
+                                                    borderRadius: 8,
+                                                    border:
+                                                      "1px solid rgba(255,255,255,0.10)",
+                                                    background: "transparent",
+                                                    color: palette.textMuted,
+                                                    cursor: "pointer",
+                                                  }}
+                                                >
+                                                  <X size={12} />
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                data-ocid={`topics.topic.item.${tIdx + 1}`}
+                                                onClick={() =>
+                                                  onSelectTopic(topic)
+                                                }
+                                                onContextMenu={(e) =>
+                                                  openContextMenu(
+                                                    "topic",
+                                                    topic.id,
+                                                    e,
+                                                  )
+                                                }
+                                                onTouchStart={(e) =>
+                                                  startLongPress(
+                                                    "topic",
+                                                    topic.id,
+                                                    e,
+                                                  )
+                                                }
+                                                onTouchEnd={cancelLongPress}
+                                                onTouchMove={cancelLongPress}
+                                                style={{
+                                                  width: "100%",
+                                                  display: "flex",
+                                                  alignItems: "center",
+                                                  gap: 10,
+                                                  padding: "10px 12px",
+                                                  borderRadius: 10,
+                                                  border:
+                                                    "1px solid rgba(255,255,255,0.07)",
+                                                  background:
+                                                    "rgba(255,255,255,0.03)",
+                                                  cursor: "pointer",
+                                                  textAlign: "left",
+                                                  boxSizing: "border-box",
+                                                }}
+                                              >
+                                                <span
+                                                  style={{
+                                                    width: 7,
+                                                    height: 7,
+                                                    borderRadius: "50%",
+                                                    background:
+                                                      subject.colorAccent,
+                                                    flexShrink: 0,
+                                                    boxShadow: `0 0 5px ${subject.colorAccent}`,
+                                                  }}
+                                                />
+                                                <span
+                                                  style={{
+                                                    flex: 1,
+                                                    fontSize: 13,
+                                                    color: palette.text,
+                                                  }}
+                                                >
+                                                  {topic.name}
+                                                </span>
+                                                <span
+                                                  style={{
+                                                    fontSize: 11,
+                                                    color: palette.textMuted,
+                                                  }}
+                                                >
+                                                  {getStudyTime(topic.id) > 0
+                                                    ? formatDuration(
+                                                        getStudyTime(topic.id),
+                                                      )
+                                                    : ""}
+                                                </span>
+                                              </button>
+                                            )}
+
+                                            {contextMenu?.type === "topic" &&
+                                              contextMenu.id === topic.id && (
+                                                <div
+                                                  data-context-menu
+                                                  style={{
+                                                    position: "fixed",
+                                                    top: contextMenu.y,
+                                                    left: Math.min(
+                                                      contextMenu.x,
+                                                      window.innerWidth - 160,
+                                                    ),
+                                                    background:
+                                                      "rgba(15,15,20,0.95)",
+                                                    backdropFilter:
+                                                      "blur(20px)",
+                                                    border:
+                                                      "1px solid rgba(255,255,255,0.15)",
+                                                    borderRadius: 12,
+                                                    padding: 6,
+                                                    zIndex: 300,
+                                                    minWidth: 150,
+                                                    boxShadow:
+                                                      "0 8px 32px rgba(0,0,0,0.6)",
+                                                  }}
+                                                >
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setRenameState({
+                                                        type: "topic",
+                                                        id: topic.id,
+                                                        value: topic.name,
+                                                      });
+                                                      setContextMenu(null);
+                                                    }}
+                                                    style={{
+                                                      display: "block",
+                                                      width: "100%",
+                                                      padding: "9px 14px",
+                                                      borderRadius: 8,
+                                                      border: "none",
+                                                      background: "transparent",
+                                                      color: palette.text,
+                                                      fontSize: 14,
+                                                      cursor: "pointer",
+                                                      textAlign: "left",
+                                                    }}
+                                                  >
+                                                    Rename
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                      handleDeleteTopic(
+                                                        topic.id,
+                                                      )
+                                                    }
+                                                    style={{
+                                                      display: "block",
+                                                      width: "100%",
+                                                      padding: "9px 14px",
+                                                      borderRadius: 8,
+                                                      border: "none",
+                                                      background: "transparent",
+                                                      color: "#EF4444",
+                                                      fontSize: 14,
+                                                      cursor: "pointer",
+                                                      textAlign: "left",
+                                                    }}
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                </div>
+                                              )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  {bottomSpacerRows > 0 && (
+                    <div
+                      style={{
+                        gridColumn: "1 / -1",
+                        height: bottomSpacerRows * CARD_HEIGHT,
+                      }}
+                    />
+                  )}
+                </>
+              );
+            })()}
+
+          {/* Add new subject card (dashed) */}
+          <button
+            type="button"
+            data-ocid="topics.add_subject.button"
+            onClick={() => setShowAddSubject(true)}
+            style={{
+              height: 150,
+              borderRadius: 20,
+              border: "1.5px dashed rgba(255,255,255,0.18)",
+              background: "rgba(255,255,255,0.02)",
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              color: "rgba(255,255,255,0.30)",
+            }}
+          >
+            <Plus size={28} strokeWidth={1.5} />
+            <span style={{ fontSize: 13 }}>Add Subject</span>
+          </button>
         </div>
-      )}
+
+        {subjects.length === 0 && (
+          <div
+            data-ocid="topics.empty_state"
+            style={{
+              textAlign: "center",
+              padding: "60px 24px",
+              color: "rgba(255,255,255,0.3)",
+            }}
+          >
+            <BookOpen
+              size={48}
+              strokeWidth={1}
+              style={{ marginBottom: 12, opacity: 0.4 }}
+            />
+            <p style={{ fontSize: 16, fontWeight: 600, margin: "0 0 6px" }}>
+              No subjects yet
+            </p>
+            <p style={{ fontSize: 13, margin: 0 }}>
+              Tap "+Subject" to create your first subject
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

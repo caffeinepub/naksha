@@ -1,8 +1,10 @@
 import { Bell, BellOff, RefreshCw, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import BottomNav from "./components/BottomNav";
+import InstallPrompt from "./components/InstallPrompt";
 import NotificationBanner from "./components/NotificationBanner";
 import Onboarding from "./components/Onboarding";
+import SplashScreen from "./components/SplashScreen";
 import TimerStatusBar from "./components/TimerStatusBar";
 import { AppearanceProvider, useAppearance } from "./context/AppearanceContext";
 import { BackupProvider, useBackup } from "./context/BackupContext";
@@ -23,59 +25,36 @@ import { PREF_KEYS, Preferences } from "./utils/preferences";
 import { getUsername } from "./utils/storage";
 
 /**
- * Slim header bar at the very top of the app.
- * Shows app name on the left; sync icon on the right ONLY while saving.
+ * Minimal floating sync indicator — only visible while saving.
+ * Zero chrome when idle: position fixed top-right, invisible when not saving.
  */
 function HeaderBar() {
   const { status } = useBackup();
-  const { palette } = useTheme();
   const isSaving = status === "saving";
+
+  if (!isSaving) return null;
 
   return (
     <div
       style={{
-        height: 44,
+        position: "fixed",
+        top: "max(12px, env(safe-area-inset-top, 12px))",
+        right: 12,
+        zIndex: 200,
         display: "flex",
         alignItems: "center",
-        justifyContent: "space-between",
-        paddingLeft: 16,
-        paddingRight: 16,
-        paddingTop: "env(safe-area-inset-top)",
-        background: "rgba(0,0,0,0.3)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        borderBottom: "1px solid rgba(255,255,255,0.05)",
-        flexShrink: 0,
+        pointerEvents: "none",
       }}
+      aria-hidden="true"
     >
-      <span
+      <RefreshCw
+        size={18}
+        color="var(--accent)"
         style={{
-          fontSize: 14,
-          fontWeight: 600,
-          color: palette.textMuted ?? "rgba(255,255,255,0.45)",
-          letterSpacing: "0.02em",
+          animation: "spin 0.6s linear infinite",
+          filter: "drop-shadow(0 0 6px var(--accent))",
         }}
-      >
-        Naksha &#x1F9ED;
-      </span>
-
-      {/* Sync icon — only appears when saving */}
-      <div
-        style={{
-          opacity: isSaving ? 1 : 0,
-          transition: "opacity 0.3s ease",
-          pointerEvents: "none",
-          display: "flex",
-          alignItems: "center",
-        }}
-        aria-hidden={!isSaving}
-      >
-        <RefreshCw
-          size={18}
-          color="var(--accent)"
-          style={{ animation: isSaving ? "spin 0.6s linear infinite" : "none" }}
-        />
-      </div>
+      />
     </div>
   );
 }
@@ -301,6 +280,81 @@ function FolderUnreachableAlert() {
   );
 }
 
+/** One-time tooltip prompting user to install for full-screen experience */
+function FullScreenTip() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const isStandalone = window.matchMedia(
+      "(display-mode: standalone)",
+    ).matches;
+    const alreadySeen = localStorage.getItem("naksha-fullscreen-tip");
+    if (!isStandalone && !alreadySeen) {
+      const timer = setTimeout(() => setVisible(true), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  const handleDismiss = () => {
+    setVisible(false);
+    localStorage.setItem("naksha-fullscreen-tip", "1");
+  };
+
+  if (!visible) return null;
+
+  return (
+    <div
+      data-ocid="fullscreen.tip.toast"
+      style={{
+        position: "fixed",
+        bottom: "calc(80px + env(safe-area-inset-bottom, 0px) + 8px)",
+        left: 16,
+        right: 16,
+        zIndex: 8500,
+        background: "rgba(15,25,18,0.96)",
+        border: "1px solid rgba(29,185,84,0.3)",
+        borderRadius: 12,
+        padding: "10px 14px",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+        maxWidth: 430,
+        margin: "0 auto",
+      }}
+    >
+      <span style={{ fontSize: 16 }}>&#x1F4F2;</span>
+      <span
+        style={{
+          flex: 1,
+          fontSize: 12,
+          color: "rgba(255,255,255,0.85)",
+          lineHeight: 1.4,
+        }}
+      >
+        Install this app for the full-screen experience.
+      </span>
+      <button
+        type="button"
+        onClick={handleDismiss}
+        data-ocid="fullscreen.tip.close_button"
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: "rgba(255,255,255,0.5)",
+          fontSize: 18,
+          lineHeight: 1,
+          padding: "0 2px",
+          flexShrink: 0,
+        }}
+      >
+        &times;
+      </button>
+    </div>
+  );
+}
+
 function AppInner() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const [username, setUsernameState] = useState<string | null>(getUsername());
@@ -308,9 +362,17 @@ function AppInner() {
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [dataReady, setDataReady] = useState(false);
   const [showPermManager, setShowPermManager] = useState(false);
+  const [splashDone, setSplashDone] = useState(false);
+  // Signal splash to hide as soon as React tree mounts — DB sync continues in background
+  const [splashHide, setSplashHide] = useState(false);
 
   const { palette } = useTheme();
   const { appearance } = useAppearance();
+
+  // Immediately signal splash to dismiss on mount — zero-latency boot
+  useEffect(() => {
+    setSplashHide(true);
+  }, []);
 
   // Data-First Initialization: check localStorage before showing UI
   useEffect(() => {
@@ -387,136 +449,184 @@ function AppInner() {
 
   const timerBarVisible = timer.isRunning || timer.isPaused;
 
+  // Show splash screen on first load
+  if (!splashDone) {
+    return (
+      <SplashScreen
+        onDone={() => setSplashDone(true)}
+        hideSignal={splashHide}
+      />
+    );
+  }
+
   return (
     <div
       style={{
-        maxWidth: 430,
-        margin: "0 auto",
-        minHeight: "100vh",
-        position: "relative",
+        position: "fixed",
+        inset: 0,
+        height: "100dvh",
         overflow: "hidden",
-        background: palette.bg,
         display: "flex",
         flexDirection: "column",
+        background: palette.bg,
       }}
     >
-      {!dataReady && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 9999,
-            background: palette.bg,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 12,
-          }}
-        >
-          <div style={{ fontSize: 32 }}>&#x1F9ED;</div>
-          <div style={{ color: palette.text, fontSize: 15, fontWeight: 600 }}>
-            Restoring your session&hellip;
-          </div>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: "50%",
-              border: `3px solid ${palette.accent}30`,
-              borderTop: `3px solid ${palette.accent}`,
-              animation: "spin 0.8s linear infinite",
-            }}
-          />
-        </div>
-      )}
+      {/* Floating sync indicator — only visible while saving */}
+      <HeaderBar />
 
-      {appearance.backgroundImage && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 0,
-            backgroundImage: `url(${appearance.backgroundImage})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            opacity: appearance.backgroundOpacity,
-            pointerEvents: "none",
-            maxWidth: 430,
-            margin: "0 auto",
-          }}
-        />
-      )}
-
-      {/* Main layout column — z-index 1 above background */}
+      {/* Centered max-width shell */}
       <div
         style={{
+          maxWidth: 430,
+          width: "100%",
+          margin: "0 auto",
+          height: "100%",
           position: "relative",
-          zIndex: 1,
+          overflow: "hidden",
           display: "flex",
           flexDirection: "column",
-          flex: 1,
-          minHeight: "100vh",
+          paddingTop: "env(safe-area-inset-top)",
+          paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
-        {showPermManager && !showOnboarding && (
-          <PermissionManagerScreen
-            onDismiss={() => setShowPermManager(false)}
+        {!dataReady && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 9999,
+              background: palette.bg,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+            }}
+          >
+            <div style={{ fontSize: 32 }}>&#x1F9ED;</div>
+            <div style={{ color: palette.text, fontSize: 15, fontWeight: 600 }}>
+              Restoring your session&hellip;
+            </div>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                border: `3px solid ${palette.accent}30`,
+                borderTop: `3px solid ${palette.accent}`,
+                animation: "spin 0.8s linear infinite",
+              }}
+            />
+          </div>
+        )}
+
+        {appearance.backgroundImage && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 0,
+              backgroundImage: `url(${appearance.backgroundImage})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              opacity: appearance.backgroundOpacity,
+              pointerEvents: "none",
+              maxWidth: 430,
+              margin: "0 auto",
+            }}
           />
         )}
-        {showOnboarding && <Onboarding onComplete={handleOnboardingComplete} />}
 
-        {/* Slim header bar with app name + sync icon */}
-        <HeaderBar />
-
-        <NotificationBanner timerRunning={timer.isRunning || timer.isPaused} />
-        <FolderUnreachableAlert />
-        <TimerStatusBar
-          timerState={timer.timerState}
-          remaining={timer.remaining}
-          onGoToTimer={() => setActiveTab("timer")}
-        />
-
-        {timerBarVisible && <div style={{ height: 46 }} />}
-
-        {/* Main content area */}
-        <div style={{ flex: 1, overflow: "hidden" }}>
-          {activeTab === "home" && (
-            <HomeScreen
-              username={username || ""}
-              timerState={timer.timerState}
-              remaining={timer.remaining}
-              onGoToTimer={() => setActiveTab("timer")}
-              appearance={appearance}
+        {/* Main layout column — z-index 1 above background */}
+        <div
+          style={{
+            position: "relative",
+            zIndex: 1,
+            display: "flex",
+            flexDirection: "column",
+            flex: 1,
+            overflow: "hidden",
+          }}
+        >
+          {showPermManager && !showOnboarding && (
+            <PermissionManagerScreen
+              onDismiss={() => setShowPermManager(false)}
             />
           )}
-          {activeTab === "topics" && (
-            <TopicsScreen onSelectTopic={handleSelectTopic} />
+          {showOnboarding && (
+            <Onboarding onComplete={handleOnboardingComplete} />
           )}
-          {activeTab === "timer" && (
-            <TimerScreen
-              selectedTopic={selectedTopic}
-              onClearTopic={handleClearTopic}
-              remaining={timer.remaining}
-              isRunning={timer.isRunning}
-              isPaused={timer.isPaused}
-              totalDuration={timer.totalDuration}
-              startTimer={timer.startTimer}
-              pauseTimer={timer.pauseTimer}
-              resumeTimer={timer.resumeTimer}
-              stopTimer={timer.stopTimer}
-              onTimerComplete={handleComplete}
-            />
-          )}
-          {activeTab === "todo" && <TodoScreen />}
-          {activeTab === "dashboard" && <DashboardScreen />}
-          {activeTab === "settings" && <SettingsScreen />}
+
+          <NotificationBanner
+            timerRunning={timer.isRunning || timer.isPaused}
+          />
+          <FolderUnreachableAlert />
+          <TimerStatusBar
+            timerState={timer.timerState}
+            remaining={timer.remaining}
+            onGoToTimer={() => setActiveTab("timer")}
+          />
+
+          {timerBarVisible && <div style={{ height: 46 }} />}
+
+          {/* Main content area — flex: 1 so it takes remaining space; overflow hidden clips to container */}
+          <div
+            style={{
+              flex: 1,
+              overflow: "hidden",
+              minHeight: 0,
+              position: "relative",
+            }}
+          >
+            <div
+              key={activeTab}
+              className="page-enter"
+              style={{ height: "100%" }}
+            >
+              {activeTab === "home" && (
+                <HomeScreen
+                  username={username || ""}
+                  timerState={timer.timerState}
+                  remaining={timer.remaining}
+                  onGoToTimer={() => setActiveTab("timer")}
+                  appearance={appearance}
+                />
+              )}
+              {activeTab === "topics" && (
+                <TopicsScreen onSelectTopic={handleSelectTopic} />
+              )}
+              {activeTab === "timer" && (
+                <TimerScreen
+                  selectedTopic={selectedTopic}
+                  onClearTopic={handleClearTopic}
+                  remaining={timer.remaining}
+                  isRunning={timer.isRunning}
+                  isPaused={timer.isPaused}
+                  totalDuration={timer.totalDuration}
+                  startTimer={timer.startTimer}
+                  pauseTimer={timer.pauseTimer}
+                  resumeTimer={timer.resumeTimer}
+                  stopTimer={timer.stopTimer}
+                  onTimerComplete={handleComplete}
+                />
+              )}
+              {activeTab === "todo" && <TodoScreen />}
+              {activeTab === "dashboard" && <DashboardScreen />}
+              {activeTab === "settings" && <SettingsScreen />}
+            </div>
+          </div>
+
+          {/* Status bar above bottom nav */}
+          <AppStatusBar />
+
+          <BottomNav active={activeTab} onChange={setActiveTab} />
         </div>
 
-        {/* Status bar above bottom nav */}
-        <AppStatusBar />
+        {/* Install-to-home-screen prompt banner */}
+        <InstallPrompt />
 
-        <BottomNav active={activeTab} onChange={setActiveTab} />
+        {/* One-time full-screen tip */}
+        <FullScreenTip />
       </div>
     </div>
   );

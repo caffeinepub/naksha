@@ -174,3 +174,31 @@ export async function getDirHandle(): Promise<FileSystemDirectoryHandle | null> 
     return null;
   }
 }
+
+/** Save just the folder name string to IDB (faster boot than reading handle) */
+export async function saveFolderNameIDB(name: string): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("dirHandles", "readwrite");
+      tx.objectStore("dirHandles").put({ id: "folderName", name });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {}
+}
+
+/** Retrieve saved folder name from IDB */
+export async function getFolderNameIDB(): Promise<string | null> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("dirHandles", "readonly");
+      const req = tx.objectStore("dirHandles").get("folderName");
+      req.onsuccess = () => resolve(req.result?.name ?? null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return null;
+  }
+}

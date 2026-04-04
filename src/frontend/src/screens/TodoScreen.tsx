@@ -358,291 +358,266 @@ const TodoScreen: FC = () => {
   return (
     <div
       style={{
-        minHeight: "100vh",
-        background: theme.bgGrad,
-        paddingBottom: 100,
-        maxWidth: 430,
-        margin: "0 auto",
+        height: "100%",
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
+        paddingBottom: "max(env(safe-area-inset-bottom, 80px), 80px)",
       }}
     >
-      {/* Header */}
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          padding: "16px 16px 12px",
-          borderBottom: `1px solid ${theme.cardShadowDark}`,
-          background: theme.card,
+          minHeight: "100%",
+          background: theme.bgGrad,
+          paddingBottom: 0,
+          maxWidth: 430,
+          margin: "0 auto",
         }}
       >
-        <div>
-          <h2
-            style={{
-              fontSize: 20,
-              fontWeight: 800,
-              color: theme.text,
-              margin: 0,
-            }}
-          >
-            To-Do
-          </h2>
-          <p
-            style={{ fontSize: 12, color: theme.textMuted, margin: "2px 0 0" }}
-          >
-            {todos.filter((t) => !t.completed).length} active
-          </p>
-        </div>
-        <button
-          type="button"
-          data-ocid="todo.open_modal_button"
-          onClick={() => setShowModal(true)}
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: "50%",
-            border: "none",
-            background: theme.accent,
-            color: theme.accentText,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <Plus size={20} />
-        </button>
-      </div>
-
-      {/* Filter tabs */}
-      <div
-        style={{
-          display: "flex",
-          background: theme.card,
-          borderBottom: `1px solid ${theme.cardShadowDark}`,
-        }}
-      >
-        {(["all", "active", "completed"] as FilterTab[]).map((f) => (
-          <button
-            type="button"
-            key={f}
-            data-ocid={`todo.${f}.tab`}
-            onClick={() => setFilter(f)}
-            style={{
-              flex: 1,
-              padding: "10px 8px",
-              border: "none",
-              borderBottom: `2px solid ${
-                filter === f ? theme.accent : "transparent"
-              }`,
-              background: "none",
-              color: filter === f ? theme.accent : theme.textMuted,
-              fontSize: 13,
-              fontWeight: filter === f ? 700 : 500,
-              cursor: "pointer",
-              textTransform: "capitalize",
-              transition: "all 0.15s",
-            }}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
-
-      {/* Task list */}
-      {filtered.length === 0 ? (
+        {/* Header */}
         <div
-          data-ocid="todo.empty_state"
           style={{
-            textAlign: "center",
-            padding: "56px 20px",
-            color: theme.textMuted,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "16px 16px 12px",
+            borderBottom: `1px solid ${theme.cardShadowDark}`,
+            background: theme.card,
           }}
         >
-          <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
-          <p style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>
-            No tasks here
-          </p>
-          <p style={{ fontSize: 13, color: theme.textMuted }}>
-            Add a task with the + button
-          </p>
-        </div>
-      ) : (
-        <div>
-          {filtered.map((todo, idx) => (
-            <div
-              key={todo.id}
-              data-ocid={`todo.item.${idx + 1}`}
+          <div>
+            <h2
               style={{
-                background: theme.card,
-                borderBottom: `1px solid ${theme.cardShadowDark}`,
-                opacity: todo.completed ? 0.6 : 1,
-                transition: "opacity 0.2s",
+                fontSize: 20,
+                fontWeight: 800,
+                color: theme.text,
+                margin: 0,
               }}
             >
+              To-Do
+            </h2>
+            <p
+              style={{
+                fontSize: 12,
+                color: theme.textMuted,
+                margin: "2px 0 0",
+              }}
+            >
+              {todos.filter((t) => !t.completed).length} active
+            </p>
+          </div>
+          <button
+            type="button"
+            data-ocid="todo.open_modal_button"
+            onClick={() => setShowModal(true)}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              border: "none",
+              background: theme.accent,
+              color: theme.accentText,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Plus size={20} />
+          </button>
+        </div>
+
+        {/* Filter tabs */}
+        <div
+          style={{
+            display: "flex",
+            background: theme.card,
+            borderBottom: `1px solid ${theme.cardShadowDark}`,
+          }}
+        >
+          {(["all", "active", "completed"] as FilterTab[]).map((f) => (
+            <button
+              type="button"
+              key={f}
+              data-ocid={`todo.${f}.tab`}
+              onClick={() => setFilter(f)}
+              style={{
+                flex: 1,
+                padding: "10px 8px",
+                border: "none",
+                borderBottom: `2px solid ${
+                  filter === f ? theme.accent : "transparent"
+                }`,
+                background: "none",
+                color: filter === f ? theme.accent : theme.textMuted,
+                fontSize: 13,
+                fontWeight: filter === f ? 700 : 500,
+                cursor: "pointer",
+                textTransform: "capitalize",
+                transition: "all 0.15s",
+              }}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+
+        {/* Task list */}
+        {filtered.length === 0 ? (
+          <div
+            data-ocid="todo.empty_state"
+            style={{
+              textAlign: "center",
+              padding: "56px 20px",
+              color: theme.textMuted,
+            }}
+          >
+            <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+            <p style={{ fontSize: 15, fontWeight: 600, color: theme.text }}>
+              No tasks here
+            </p>
+            <p style={{ fontSize: 13, color: theme.textMuted }}>
+              Add a task with the + button
+            </p>
+          </div>
+        ) : (
+          <div>
+            {filtered.map((todo, idx) => (
               <div
+                key={todo.id}
+                data-ocid={`todo.item.${idx + 1}`}
                 style={{
-                  padding: "13px 14px",
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 10,
+                  background: theme.card,
+                  borderBottom: `1px solid ${theme.cardShadowDark}`,
+                  opacity: todo.completed ? 0.6 : 1,
+                  transition: "opacity 0.2s",
                 }}
               >
-                {/* Checkbox */}
-                <button
-                  type="button"
-                  data-ocid={`todo.checkbox.${idx + 1}`}
-                  onClick={() => handleToggle(todo.id)}
+                <div
                   style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: 7,
-                    border: `2px solid ${
-                      todo.completed ? theme.accent : theme.textMuted
-                    }`,
-                    background: todo.completed ? theme.accent : "none",
-                    cursor: "pointer",
-                    flexShrink: 0,
+                    padding: "13px 14px",
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginTop: 1,
+                    alignItems: "flex-start",
+                    gap: 10,
                   }}
                 >
-                  {todo.completed && (
-                    <span
+                  {/* Checkbox */}
+                  <button
+                    type="button"
+                    data-ocid={`todo.checkbox.${idx + 1}`}
+                    onClick={() => handleToggle(todo.id)}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 7,
+                      border: `2px solid ${
+                        todo.completed ? theme.accent : theme.textMuted
+                      }`,
+                      background: todo.completed ? theme.accent : "none",
+                      cursor: "pointer",
+                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginTop: 1,
+                    }}
+                  >
+                    {todo.completed && (
+                      <span
+                        style={{
+                          color: theme.accentText,
+                          fontSize: 13,
+                          lineHeight: 1,
+                        }}
+                      >
+                        ✓
+                      </span>
+                    )}
+                  </button>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
                       style={{
-                        color: theme.accentText,
-                        fontSize: 13,
-                        lineHeight: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        flexWrap: "wrap",
                       }}
                     >
-                      ✓
-                    </span>
-                  )}
-                </button>
+                      <span
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 700,
+                          color: theme.text,
+                          textDecoration: todo.completed
+                            ? "line-through"
+                            : "none",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {todo.title}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: PRIORITY_COLORS[todo.priority],
+                          background: PRIORITY_BG[todo.priority],
+                          borderRadius: 5,
+                          padding: "2px 7px",
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {todo.priority}
+                      </span>
+                      {todo.alarmSet && <Bell size={12} color={theme.accent} />}
+                    </div>
 
-                <div style={{ flex: 1, minWidth: 0 }}>
+                    {todo.deadline && (
+                      <p
+                        style={{
+                          fontSize: 12,
+                          color: theme.textMuted,
+                          margin: "3px 0 0",
+                        }}
+                      >
+                        📅{" "}
+                        {new Date(todo.deadline).toLocaleString(undefined, {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })}
+                      </p>
+                    )}
+
+                    {todo.description && (
+                      <p
+                        style={{
+                          fontSize: 13,
+                          color: theme.textMuted,
+                          margin: "4px 0 0",
+                          overflow: "hidden",
+                          display: "-webkit-box",
+                          WebkitLineClamp:
+                            expandedId === todo.id ? undefined : 2,
+                          WebkitBoxOrient: "vertical",
+                        }}
+                      >
+                        {todo.description}
+                      </p>
+                    )}
+                  </div>
+
                   <div
                     style={{
                       display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      flexWrap: "wrap",
+                      flexDirection: "column",
+                      gap: 4,
+                      flexShrink: 0,
                     }}
                   >
-                    <span
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 700,
-                        color: theme.text,
-                        textDecoration: todo.completed
-                          ? "line-through"
-                          : "none",
-                        wordBreak: "break-word",
-                      }}
-                    >
-                      {todo.title}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: PRIORITY_COLORS[todo.priority],
-                        background: PRIORITY_BG[todo.priority],
-                        borderRadius: 5,
-                        padding: "2px 7px",
-                        textTransform: "capitalize",
-                      }}
-                    >
-                      {todo.priority}
-                    </span>
-                    {todo.alarmSet && <Bell size={12} color={theme.accent} />}
-                  </div>
-
-                  {todo.deadline && (
-                    <p
-                      style={{
-                        fontSize: 12,
-                        color: theme.textMuted,
-                        margin: "3px 0 0",
-                      }}
-                    >
-                      📅{" "}
-                      {new Date(todo.deadline).toLocaleString(undefined, {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
-                    </p>
-                  )}
-
-                  {todo.description && (
-                    <p
-                      style={{
-                        fontSize: 13,
-                        color: theme.textMuted,
-                        margin: "4px 0 0",
-                        overflow: "hidden",
-                        display: "-webkit-box",
-                        WebkitLineClamp: expandedId === todo.id ? undefined : 2,
-                        WebkitBoxOrient: "vertical",
-                      }}
-                    >
-                      {todo.description}
-                    </p>
-                  )}
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 4,
-                    flexShrink: 0,
-                  }}
-                >
-                  <button
-                    type="button"
-                    data-ocid={`todo.edit_button.${idx + 1}`}
-                    onClick={() => setEditingTodo(todo)}
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: 7,
-                      border: `1px solid ${theme.cardShadowDark}`,
-                      background: theme.bg,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Edit3 size={13} color={theme.textMuted} />
-                  </button>
-                  <button
-                    type="button"
-                    data-ocid={`todo.delete_button.${idx + 1}`}
-                    onClick={() => handleDelete(todo.id)}
-                    style={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: 7,
-                      border: `1px solid ${theme.cardShadowDark}`,
-                      background: theme.bg,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Trash2 size={13} color="#EF4444" />
-                  </button>
-                  {todo.description && (
                     <button
                       type="button"
-                      onClick={() =>
-                        setExpandedId(expandedId === todo.id ? null : todo.id)
-                      }
+                      data-ocid={`todo.edit_button.${idx + 1}`}
+                      onClick={() => setEditingTodo(todo)}
                       style={{
                         width: 30,
                         height: 30,
@@ -655,45 +630,86 @@ const TodoScreen: FC = () => {
                         justifyContent: "center",
                       }}
                     >
-                      <ChevronDown
-                        size={13}
-                        color={theme.textMuted}
-                        style={{
-                          transform:
-                            expandedId === todo.id ? "rotate(180deg)" : "none",
-                          transition: "transform 0.2s",
-                        }}
-                      />
+                      <Edit3 size={13} color={theme.textMuted} />
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      data-ocid={`todo.delete_button.${idx + 1}`}
+                      onClick={() => handleDelete(todo.id)}
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 7,
+                        border: `1px solid ${theme.cardShadowDark}`,
+                        background: theme.bg,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Trash2 size={13} color="#EF4444" />
+                    </button>
+                    {todo.description && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedId(expandedId === todo.id ? null : todo.id)
+                        }
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 7,
+                          border: `1px solid ${theme.cardShadowDark}`,
+                          background: theme.bg,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <ChevronDown
+                          size={13}
+                          color={theme.textMuted}
+                          style={{
+                            transform:
+                              expandedId === todo.id
+                                ? "rotate(180deg)"
+                                : "none",
+                            transition: "transform 0.2s",
+                          }}
+                        />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
-      {showModal && (
-        <TodoModal
-          theme={theme}
-          onSave={handleAdd}
-          onClose={() => setShowModal(false)}
-        />
-      )}
-      {editingTodo && (
-        <TodoModal
-          theme={theme}
-          initial={{
-            title: editingTodo.title,
-            description: editingTodo.description,
-            priority: editingTodo.priority,
-            deadline: editingTodo.deadline,
-            alarmSet: editingTodo.alarmSet,
-          }}
-          onSave={handleEdit}
-          onClose={() => setEditingTodo(null)}
-        />
-      )}
+        {showModal && (
+          <TodoModal
+            theme={theme}
+            onSave={handleAdd}
+            onClose={() => setShowModal(false)}
+          />
+        )}
+        {editingTodo && (
+          <TodoModal
+            theme={theme}
+            initial={{
+              title: editingTodo.title,
+              description: editingTodo.description,
+              priority: editingTodo.priority,
+              deadline: editingTodo.deadline,
+              alarmSet: editingTodo.alarmSet,
+            }}
+            onSave={handleEdit}
+            onClose={() => setEditingTodo(null)}
+          />
+        )}
+      </div>
     </div>
   );
 };

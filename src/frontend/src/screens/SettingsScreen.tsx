@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { type FC, useEffect, useRef, useState } from "react";
 import BellPermissionModal from "../components/BellPermissionModal";
+import { IOSInstallCard } from "../components/InstallPrompt";
 import { useAppearance } from "../context/AppearanceContext";
 import { useBackup } from "../context/BackupContext";
 import { usePalette } from "../context/ThemeContext";
@@ -85,6 +86,16 @@ const SettingsScreen: FC = () => {
   );
   const [copied, setCopied] = useState(false);
   const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [deferredInstallPrompt, setDeferredInstallPrompt] = useState<any>(null);
+  const [isPwaInstalled] = useState(
+    () => !!localStorage.getItem("naksha-pwa-installed"),
+  );
+  const [isStandaloneMode] = useState(
+    () => window.matchMedia("(display-mode: standalone)").matches,
+  );
+  const isIOSDevice =
+    /(iPad|iPhone|iPod)/i.test(navigator.userAgent) &&
+    !(window as any).MSStream;
   const [confirmDeleteCloud, setConfirmDeleteCloud] = useState(false);
   const [confirmPullCloud, setConfirmPullCloud] = useState(false);
   const [cloudMsg, setCloudMsg] = useState<string | null>(null);
@@ -120,6 +131,19 @@ const SettingsScreen: FC = () => {
       if ("Notification" in window) setNotifPerm(Notification.permission);
     }, 3000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      setDeferredInstallPrompt(e);
+    };
+    window.addEventListener("beforeinstallprompt", handler as EventListener);
+    return () =>
+      window.removeEventListener(
+        "beforeinstallprompt",
+        handler as EventListener,
+      );
   }, []);
 
   const handleSaveName = () => {
@@ -179,6 +203,16 @@ const SettingsScreen: FC = () => {
     if ("storage" in navigator && "persist" in navigator.storage) {
       const result = await navigator.storage.persist();
       setPersistedStorage(result);
+    }
+  };
+
+  const handleInstallApp = async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    const { outcome } = await (deferredInstallPrompt as any).userChoice;
+    if (outcome === "accepted") {
+      localStorage.setItem("naksha-pwa-installed", "1");
+      setDeferredInstallPrompt(null);
     }
   };
 
@@ -526,908 +560,48 @@ const SettingsScreen: FC = () => {
   return (
     <div
       style={{
-        minHeight: "100vh",
-        background: palette.bg,
-        padding: "20px 16px 110px",
-        maxWidth: 430,
-        margin: "0 auto",
-        fontFamily: "'DM Sans', sans-serif",
+        height: "100%",
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
+        paddingBottom: "max(env(safe-area-inset-bottom, 80px), 80px)",
       }}
     >
-      <BellPermissionModal
-        open={bellModalOpen}
-        onClose={() => setBellModalOpen(false)}
-      />
-
-      <h2
+      <div
         style={{
-          fontSize: 22,
-          fontWeight: 800,
-          color: palette.text,
-          margin: "0 0 20px",
+          minHeight: "100%",
+          background: palette.bg,
+          padding: "20px 16px 0",
+          maxWidth: 430,
+          margin: "0 auto",
+          fontFamily: "'DM Sans', sans-serif",
         }}
       >
-        Settings
-      </h2>
-
-      {/* Profile */}
-      <div style={sectionStyle}>
-        <div style={labelStyle}>
-          <User size={13} /> Profile
-        </div>
-        <input
-          id="settings-username"
-          data-ocid="settings.username.input"
-          type="text"
-          value={username}
-          onChange={(e) => setUsernameLocal(e.target.value)}
-          placeholder="Your name"
-          style={inputStyle}
+        <BellPermissionModal
+          open={bellModalOpen}
+          onClose={() => setBellModalOpen(false)}
         />
-        <button
-          type="button"
-          data-ocid="settings.username.save_button"
-          onClick={handleSaveName}
+
+        <h2
           style={{
-            padding: "10px 20px",
-            borderRadius: 50,
-            border: saved
-              ? "1px solid rgba(34,197,94,0.5)"
-              : `1px solid ${palette.accent}50`,
-            background: saved ? "rgba(34,197,94,0.12)" : `${palette.accent}14`,
-            color: saved ? "#22C55E" : palette.accent,
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: "pointer",
-            boxShadow: saved
-              ? "0 0 10px rgba(34,197,94,0.3)"
-              : `0 0 10px ${palette.accentGlow}25`,
-            transition: "all 0.3s",
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
+            fontSize: 22,
+            fontWeight: 800,
+            color: palette.text,
+            margin: "0 0 20px",
           }}
         >
-          {saved && <Check size={14} />}
-          {saved ? "Saved!" : "Save Name"}
-        </button>
-      </div>
+          Settings
+        </h2>
 
-      {/* Theme Center */}
-      <div style={sectionStyle}>
-        <div style={labelStyle}>
-          <Palette size={13} /> Theme Center
-        </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
-            gap: 10,
-          }}
-        >
-          {allPalettes.map((p) => {
-            const isActive = paletteId === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                data-ocid={`settings.theme.${p.id}.button`}
-                onClick={() => setPalette(p.id as PaletteId)}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "10px 6px",
-                  borderRadius: 14,
-                  border: isActive
-                    ? `1.5px solid ${p.accent}`
-                    : "1px solid rgba(255,255,255,0.08)",
-                  background: isActive ? `${p.accent}14` : p.bg,
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                  boxShadow: isActive ? `0 0 14px ${p.accentGlow}50` : "none",
-                  position: "relative",
-                }}
-              >
-                {isActive && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 4,
-                      right: 4,
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: p.accent,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      boxShadow: `0 0 6px ${p.accentGlow}`,
-                    }}
-                  >
-                    <Check size={8} color="#000" strokeWidth={3} />
-                  </div>
-                )}
-                <div
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    background: p.accent,
-                    boxShadow: `0 0 12px ${p.accentGlow}80`,
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 10,
-                    color: isActive ? p.accent : "rgba(255,255,255,0.5)",
-                    fontWeight: isActive ? 700 : 400,
-                    textAlign: "center",
-                    lineHeight: 1.2,
-                  }}
-                >
-                  {p.name}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Notifications */}
-      <div style={sectionStyle}>
-        <div style={labelStyle}>
-          {notifPerm === "granted" ? <Bell size={13} /> : <BellOff size={13} />}
-          Notifications
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 14,
-          }}
-        >
-          <span style={{ fontSize: 14, color: palette.text }}>Status</span>
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              color: notifColor,
-              background: `${notifColor}14`,
-              border: `1px solid ${notifColor}40`,
-              borderRadius: 20,
-              padding: "3px 10px",
-              boxShadow:
-                notifPerm === "granted"
-                  ? "0 0 8px rgba(34,197,94,0.3)"
-                  : "none",
-            }}
-          >
-            {notifLabel}
-          </span>
-        </div>
-
-        <button
-          type="button"
-          data-ocid="settings.notifications.primary_button"
-          onClick={handleEnableNotifications}
-          style={{
-            width: "100%",
-            padding: "11px 16px",
-            borderRadius: 12,
-            border:
-              notifPerm === "granted"
-                ? "1px solid rgba(34,197,94,0.4)"
-                : notifPerm === "denied"
-                  ? "1px solid rgba(239,68,68,0.4)"
-                  : `1px solid ${palette.accent}50`,
-            background:
-              notifPerm === "granted"
-                ? "rgba(34,197,94,0.08)"
-                : notifPerm === "denied"
-                  ? "rgba(239,68,68,0.08)"
-                  : `${palette.accent}14`,
-            color:
-              notifPerm === "granted"
-                ? "#22C55E"
-                : notifPerm === "denied"
-                  ? "#EF4444"
-                  : palette.accent,
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 10,
-            transition: "all 0.2s",
-          }}
-        >
-          <Bell size={15} />
-          {notifPerm === "granted"
-            ? "Notifications Enabled \u2705"
-            : notifPerm === "denied"
-              ? "Enable in Phone Settings"
-              : "Enable Timer Notifications"}
-        </button>
-
-        <button
-          type="button"
-          data-ocid="settings.notifications.secondary_button"
-          onClick={handleTestNotification}
-          disabled={testNotifCountdown !== null}
-          style={{
-            width: "100%",
-            padding: "11px 16px",
-            borderRadius: 12,
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(255,255,255,0.05)",
-            color: testNotifCountdown !== null ? "#F59E0B" : palette.text,
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: testNotifCountdown !== null ? "not-allowed" : "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            opacity: testNotifCountdown !== null ? 0.85 : 1,
-            transition: "all 0.2s",
-          }}
-        >
-          <Bell size={15} />
-          {testNotifCountdown !== null
-            ? `Testing in ${testNotifCountdown}s\u2026`
-            : "Test Notification (5s delay)"}
-        </button>
-
-        {notifPerm === "denied" && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: "10px 12px",
-              borderRadius: 10,
-              background: "rgba(239,68,68,0.08)",
-              border: "1px solid rgba(239,68,68,0.2)",
-              fontSize: 12,
-              color: "rgba(239,68,68,0.9)",
-              lineHeight: 1.5,
-            }}
-          >
-            Notifications are blocked. Tap \u201cEnable in Phone Settings\u201d
-            above for instructions.
+        {/* Account — Internet Identity (top of settings for quick access) */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <User size={13} /> Account
           </div>
-        )}
 
-        <button
-          type="button"
-          data-ocid="settings.permissions.button"
-          onClick={() => setShowPermManager(true)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: 10,
-            padding: "10px 14px",
-            color: "rgba(255,255,255,0.7)",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            width: "100%",
-            marginTop: 8,
-          }}
-        >
-          <Shield size={15} />
-          Permission Manager
-        </button>
-      </div>
-
-      {/* Data Management */}
-      <div style={sectionStyle}>
-        <div style={labelStyle}>
-          <FolderOpen size={13} /> Data Management
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 14,
-            padding: "10px 12px",
-            borderRadius: 12,
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.08)",
-          }}
-        >
-          {folderLinked ? (
-            <FolderOpen
-              size={16}
-              color={backupStatusColor}
-              style={{
-                filter:
-                  status === "saved"
-                    ? "drop-shadow(0 0 6px rgba(34,197,94,0.8))"
-                    : undefined,
-                transition: "color 0.4s, filter 0.4s",
-                flexShrink: 0,
-              }}
-            />
-          ) : (
-            <WifiOff size={16} color="#EF4444" style={{ flexShrink: 0 }} />
-          )}
-          <span style={{ fontSize: 13, color: palette.text, flex: 1 }}>
-            {folderLinked ? (
-              <>
-                Master Folder:{" "}
-                <strong
-                  style={{ color: "#FFFFFF", fontWeight: 700, fontSize: 13 }}
-                >
-                  {currentFolderName || "(linked)"}
-                </strong>
-              </>
-            ) : (
-              "No Folder Linked"
-            )}
-          </span>
-          <span
-            style={{
-              fontSize: 11,
-              color: folderLinked ? backupStatusColor : "#EF4444",
-              fontWeight: 600,
-            }}
-          >
-            {folderLinked ? backupStatusLabel : "Disconnected"}
-          </span>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 10,
-          }}
-        >
-          <button
-            type="button"
-            data-ocid="settings.monarch.primary_button"
-            onClick={handleSafeRefresh}
-            disabled={refreshing}
-            style={{
-              flex: 1,
-              padding: "11px 16px",
-              borderRadius: 12,
-              border: `1px solid ${palette.accent}40`,
-              background: `${palette.accent}0C`,
-              color: palette.accent,
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: refreshing ? "not-allowed" : "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              opacity: refreshing ? 0.7 : 1,
-              transition: "all 0.2s",
-            }}
-          >
-            <RefreshCw
-              size={15}
-              style={{
-                animation: refreshing ? "spin 0.6s linear infinite" : "none",
-              }}
-            />
-            {refreshing ? "Saving\u2026" : "Refresh & Sync"}
-          </button>
-          {(status === "saved" || status === "idle") && !refreshing && (
-            <div
-              data-ocid="settings.monarch.success_state"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                padding: "6px 10px",
-                borderRadius: 20,
-                background: "rgba(34,197,94,0.10)",
-                border: "1px solid rgba(34,197,94,0.3)",
-                flexShrink: 0,
-              }}
-            >
-              <CheckCircle size={13} color="#22C55E" />
-              <span style={{ fontSize: 11, color: "#22C55E", fontWeight: 600 }}>
-                Saved
-              </span>
-            </div>
-          )}
-        </div>
-
-        {isFolderSystemSupported() && (
-          <button
-            type="button"
-            data-ocid="settings.monarch.link_button"
-            onClick={handleSelectFolder}
-            style={{
-              width: "100%",
-              padding: "11px 16px",
-              borderRadius: 12,
-              border: folderLinked
-                ? "1.5px solid rgba(34,197,94,0.5)"
-                : `1px solid ${palette.accent}40`,
-              background: folderLinked
-                ? "rgba(34,197,94,0.10)"
-                : `${palette.accent}0C`,
-              color: folderLinked ? "#22C55E" : palette.accent,
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: folderLinked ? 6 : 10,
-              transition: "all 0.2s",
-              boxShadow: folderLinked
-                ? "0 0 14px rgba(34,197,94,0.25), inset 0 0 0 1px rgba(34,197,94,0.2)"
-                : "none",
-            }}
-          >
-            <FolderOpen size={15} />
-            {folderLinked ? "Re-select Folder" : "Select Folder"}
-          </button>
-        )}
-
-        {folderLinked && currentFolderName && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              marginBottom: 10,
-              padding: "8px 12px",
-              borderRadius: 10,
-              background: "rgba(34,197,94,0.06)",
-              border: "1px solid rgba(34,197,94,0.15)",
-            }}
-          >
-            <FolderOpen size={13} color="#22C55E" style={{ flexShrink: 0 }} />
-            <span
-              style={{
-                fontSize: 14,
-                fontWeight: 700,
-                color: "#FFFFFF",
-                letterSpacing: "0.01em",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {currentFolderName}
-            </span>
-          </div>
-        )}
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 10,
-          }}
-        >
-          <button
-            type="button"
-            data-ocid="settings.monarch.change_dir.button"
-            onClick={handleSelectFolder}
-            style={{
-              flex: 1,
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.05)",
-              color: palette.text,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              transition: "all 0.2s",
-            }}
-          >
-            <FolderOpen size={14} />
-            Change Directory
-          </button>
-          <div
-            style={{
-              fontSize: 11,
-              color: "rgba(255,255,255,0.4)",
-              padding: "6px 10px",
-              borderRadius: 10,
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              maxWidth: 140,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-            title={
-              isCapacitorNative()
-                ? `Documents/NakshaData${currentFolderName && currentFolderName !== "Documents" ? ` \u2192 ${currentFolderName}` : ""}`
-                : currentFolderName || "NakshaData (default)"
-            }
-          >
-            {isCapacitorNative()
-              ? "Documents/NakshaData"
-              : currentFolderName
-                ? currentFolderName
-                : "NakshaData (default)"}
-          </div>
-        </div>
-
-        {!isFolderSystemSupported() && (
-          <p
-            style={{
-              fontSize: 12,
-              color: palette.textMuted,
-              marginBottom: 12,
-              lineHeight: 1.5,
-            }}
-          >
-            Folder picker is not supported in this browser. Use Export/Import
-            below to back up your data manually.
-          </p>
-        )}
-
-        {folderLinked && (
-          <button
-            type="button"
-            data-ocid="settings.monarch.secondary_button"
-            onClick={handleTestConnection}
-            style={{
-              width: "100%",
-              padding: "11px 16px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.05)",
-              color: palette.text,
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 10,
-              transition: "all 0.2s",
-            }}
-          >
-            <CheckCircle size={15} />
-            Test Connection
-          </button>
-        )}
-
-        {testResult && (
-          <div
-            data-ocid="settings.monarch.success_state"
-            style={{
-              marginBottom: 10,
-              padding: "8px 12px",
-              borderRadius: 8,
-              background: testResult.startsWith("\u274c")
-                ? "rgba(239,68,68,0.10)"
-                : "rgba(34,197,94,0.10)",
-              border: testResult.startsWith("\u274c")
-                ? "1px solid rgba(239,68,68,0.3)"
-                : "1px solid rgba(34,197,94,0.3)",
-              fontSize: 12,
-              color: testResult.startsWith("\u274c") ? "#EF4444" : "#22C55E",
-              lineHeight: 1.4,
-            }}
-          >
-            {testResult}
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            type="button"
-            data-ocid="settings.monarch.export_button"
-            onClick={handleExport}
-            style={{
-              flex: 1,
-              padding: "11px 12px",
-              borderRadius: 12,
-              border: `1px solid ${palette.accent}40`,
-              background: `${palette.accent}0C`,
-              color: palette.accent,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-            }}
-          >
-            <Download size={14} /> Export Data
-          </button>
-          <button
-            type="button"
-            data-ocid="settings.monarch.import_button"
-            onClick={handleImport}
-            style={{
-              flex: 1,
-              padding: "11px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.05)",
-              color: palette.text,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-            }}
-          >
-            <Upload size={14} /> Import Data
-          </button>
-        </div>
-
-        {importResult && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: "8px 12px",
-              borderRadius: 8,
-              background: importResult.startsWith("Import failed")
-                ? "rgba(239,68,68,0.10)"
-                : "rgba(34,197,94,0.10)",
-              border: importResult.startsWith("Import failed")
-                ? "1px solid rgba(239,68,68,0.3)"
-                : "1px solid rgba(34,197,94,0.3)",
-              fontSize: 12,
-              color: importResult.startsWith("Import failed")
-                ? "#EF4444"
-                : "#22C55E",
-              lineHeight: 1.4,
-            }}
-          >
-            {importResult}
-          </div>
-        )}
-      </div>
-
-      {/* Browser Storage */}
-      <div style={sectionStyle}>
-        <div style={labelStyle}>
-          <Database size={13} /> Browser Storage
-        </div>
-        {storageEstimate && (
-          <p style={{ fontSize: 14, color: palette.text, margin: "0 0 8px" }}>
-            Local usage:{" "}
-            <strong style={{ color: palette.accent }}>{storageEstimate}</strong>
-          </p>
-        )}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <span style={{ fontSize: 14, color: palette.text }}>
-            Persistent:{" "}
-            <strong style={{ color: persistedStorage ? "#22C55E" : "#F59E0B" }}>
-              {persistedStorage === null
-                ? "..."
-                : persistedStorage
-                  ? "Yes"
-                  : "No"}
-            </strong>
-          </span>
-          {!persistedStorage && (
+          {!isLoggedIn ? (
             <button
               type="button"
-              data-ocid="settings.storage.primary_button"
-              onClick={handlePersistStorage}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 50,
-                border: `1px solid ${palette.accent}40`,
-                background: `${palette.accent}10`,
-                color: palette.accent,
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              Enable
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Appearance */}
-      <div style={sectionStyle}>
-        <div style={labelStyle}>
-          <Eye size={13} /> Appearance
-        </div>
-
-        <div style={{ marginBottom: 20 }}>
-          <div
-            style={{
-              fontSize: 13,
-              color: palette.text,
-              fontWeight: 600,
-              marginBottom: 8,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            <Image size={13} style={{ display: "inline" }} /> Background Image
-          </div>
-          {appearance.backgroundImage ? (
-            <div style={{ marginBottom: 10 }}>
-              <img
-                src={appearance.backgroundImage}
-                alt="Background preview"
-                style={{
-                  width: "100%",
-                  height: 80,
-                  objectFit: "cover",
-                  borderRadius: 10,
-                  marginBottom: 8,
-                  border: "1px solid rgba(255,255,255,0.10)",
-                }}
-              />
-              <button
-                type="button"
-                data-ocid="settings.appearance.delete_button"
-                onClick={() =>
-                  setAppearance({ ...appearance, backgroundImage: null })
-                }
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: 50,
-                  border: "1px solid rgba(239,68,68,0.4)",
-                  background: "rgba(239,68,68,0.08)",
-                  color: "#EF4444",
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  marginBottom: 8,
-                }}
-              >
-                Remove Image
-              </button>
-            </div>
-          ) : null}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleBgUpload}
-            style={{ display: "none" }}
-          />
-          <button
-            type="button"
-            data-ocid="settings.appearance.upload_button"
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 50,
-              border: "1px dashed rgba(255,255,255,0.20)",
-              background: "transparent",
-              color: palette.textMuted,
-              fontSize: 13,
-              cursor: "pointer",
-            }}
-          >
-            Upload Image
-          </button>
-          {appearance.backgroundImage &&
-            sliderRow("Opacity", appearance.backgroundOpacity, (v) =>
-              setAppearance({ ...appearance, backgroundOpacity: v }),
-            )}
-        </div>
-
-        <div>
-          <div
-            style={{
-              fontSize: 13,
-              color: palette.text,
-              fontWeight: 600,
-              marginBottom: 12,
-            }}
-          >
-            \u2728 Living Space
-          </div>
-          {toggleRow(
-            "Stars",
-            <Star size={14} color={palette.textMuted} />,
-            appearance.starsEnabled,
-            (v) => setAppearance({ ...appearance, starsEnabled: v }),
-          )}
-          {appearance.starsEnabled &&
-            sliderRow("Opacity", appearance.starsOpacity, (v) =>
-              setAppearance({ ...appearance, starsOpacity: v }),
-            )}
-          <div style={{ height: 10 }} />
-          {toggleRow(
-            "Shooting Stars",
-            <Zap size={14} color={palette.textMuted} />,
-            appearance.shootingStarsEnabled,
-            (v) => setAppearance({ ...appearance, shootingStarsEnabled: v }),
-          )}
-          {appearance.shootingStarsEnabled &&
-            sliderRow("Opacity", appearance.shootingStarsOpacity, (v) =>
-              setAppearance({ ...appearance, shootingStarsOpacity: v }),
-            )}
-          <div style={{ height: 10 }} />
-          {toggleRow(
-            "Orion Belt",
-            <Star size={14} color={palette.textMuted} />,
-            appearance.orionBeltEnabled,
-            (v) => setAppearance({ ...appearance, orionBeltEnabled: v }),
-          )}
-          {appearance.orionBeltEnabled &&
-            sliderRow("Opacity", appearance.orionBeltOpacity, (v) =>
-              setAppearance({ ...appearance, orionBeltOpacity: v }),
-            )}
-        </div>
-      </div>
-
-      {/* ===== CLOUD SYNC & ACCOUNT ===== */}
-      <div style={sectionStyle}>
-        <div style={labelStyle}>
-          <Cloud size={13} /> Cloud Sync &amp; Account
-        </div>
-
-        {!isLoggedIn ? (
-          /* --- Logged OUT state --- */
-          <>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 14,
-              }}
-            >
-              <CloudOff size={15} color="rgba(255,255,255,0.35)" />
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "rgba(255,255,255,0.4)",
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  borderRadius: 20,
-                  padding: "3px 10px",
-                }}
-              >
-                Not logged in
-              </span>
-            </div>
-            <p
-              style={{
-                fontSize: 13,
-                color: palette.textMuted,
-                lineHeight: 1.5,
-                margin: "0 0 14px",
-              }}
-            >
-              Log in to backup your study data to the cloud and access it from
-              any device \u2014 even if you lose your phone.
-            </p>
-            <button
-              type="button"
-              data-ocid="settings.cloud.login.primary_button"
+              data-ocid="settings.account.login.primary_button"
               onClick={login}
               style={{
                 width: "100%",
@@ -1450,269 +624,1321 @@ const SettingsScreen: FC = () => {
               <LogIn size={17} />
               Login with Internet Identity
             </button>
-          </>
-        ) : (
-          /* --- Logged IN state --- */
-          <>
-            {/* Principal pill */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <User size={14} color="#22C55E" />
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "#22C55E",
-                  background: "rgba(34,197,94,0.10)",
-                  border: "1px solid rgba(34,197,94,0.35)",
-                  borderRadius: 20,
-                  padding: "3px 10px",
-                  fontFamily: "monospace",
-                  boxShadow: "0 0 8px rgba(34,197,94,0.2)",
-                }}
-              >
-                {truncatedPrincipal}
-              </span>
-            </div>
-
-            {/* Sync status + last synced */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 14,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: cloudStatusColor,
-                  background: `${cloudStatusColor}14`,
-                  border: `1px solid ${cloudStatusColor}40`,
-                  borderRadius: 20,
-                  padding: "3px 10px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                  boxShadow:
-                    cloudSyncStatus === "synced"
-                      ? "0 0 8px rgba(34,197,94,0.25)"
-                      : cloudSyncStatus === "syncing"
-                        ? "0 0 8px rgba(245,158,11,0.3)"
-                        : "none",
-                  animation:
-                    cloudSyncStatus === "syncing"
-                      ? "pulse 1s ease-in-out infinite"
-                      : "none",
-                }}
-              >
-                <Cloud size={11} />
-                {cloudStatusLabel}
-              </span>
-              {lastSyncLabel && (
-                <span style={{ fontSize: 11, color: palette.textMuted }}>
-                  Last synced: {lastSyncLabel}
-                </span>
-              )}
-            </div>
-
-            {/* Feedback message */}
-            {cloudMsg && (
+          ) : (
+            <>
+              {/* Principal pill */}
               <div
-                data-ocid="settings.cloud.success_state"
                 style={{
-                  marginBottom: 12,
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  background: cloudMsg.startsWith("\u274c")
-                    ? "rgba(239,68,68,0.10)"
-                    : "rgba(34,197,94,0.10)",
-                  border: cloudMsg.startsWith("\u274c")
-                    ? "1px solid rgba(239,68,68,0.3)"
-                    : "1px solid rgba(34,197,94,0.3)",
-                  fontSize: 12,
-                  color: cloudMsg.startsWith("\u274c") ? "#EF4444" : "#22C55E",
-                  lineHeight: 1.4,
-                }}
-              >
-                {cloudMsg}
-              </div>
-            )}
-
-            {/* Sync Now button */}
-            <button
-              type="button"
-              data-ocid="settings.cloud.sync.primary_button"
-              onClick={handleSyncNow}
-              disabled={cloudSyncStatus === "syncing"}
-              style={{
-                width: "100%",
-                padding: "11px 16px",
-                borderRadius: 12,
-                border: `1px solid ${palette.accent}50`,
-                background: `${palette.accent}12`,
-                color: palette.accent,
-                fontSize: 14,
-                fontWeight: 700,
-                cursor:
-                  cloudSyncStatus === "syncing" ? "not-allowed" : "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 8,
-                opacity: cloudSyncStatus === "syncing" ? 0.7 : 1,
-                transition: "all 0.2s",
-                boxShadow: `0 0 12px ${palette.accentGlow}20`,
-              }}
-            >
-              <RefreshCw
-                size={15}
-                style={{
-                  animation:
-                    cloudSyncStatus === "syncing"
-                      ? "spin 0.6s linear infinite"
-                      : "none",
-                }}
-              />
-              {cloudSyncStatus === "syncing" ? "Syncing\u2026" : "Sync Now"}
-            </button>
-
-            {/* Pull from Cloud button */}
-            {!confirmPullCloud ? (
-              <button
-                type="button"
-                data-ocid="settings.cloud.pull.secondary_button"
-                onClick={() => setConfirmPullCloud(true)}
-                style={{
-                  width: "100%",
-                  padding: "11px 16px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(255,255,255,0.05)",
-                  color: palette.text,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: 8,
-                  marginBottom: 8,
-                  transition: "all 0.2s",
+                  marginBottom: 12,
+                  flexWrap: "wrap",
                 }}
               >
-                <Download size={15} />
-                Pull from Cloud
-              </button>
-            ) : (
-              <div
-                style={{
-                  marginBottom: 8,
-                  padding: "12px 14px",
-                  borderRadius: 12,
-                  background: "rgba(245,158,11,0.08)",
-                  border: "1px solid rgba(245,158,11,0.3)",
-                }}
-              >
-                <p
+                <User size={14} color="#22C55E" />
+                <span
                   style={{
-                    fontSize: 13,
-                    color: "#F59E0B",
-                    margin: "0 0 10px",
-                    fontWeight: 600,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#22C55E",
+                    background: "rgba(34,197,94,0.10)",
+                    border: "1px solid rgba(34,197,94,0.35)",
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                    fontFamily: "monospace",
+                    boxShadow: "0 0 8px rgba(34,197,94,0.2)",
                   }}
                 >
-                  \u26a0\ufe0f This will overwrite your local data with cloud
-                  data. Continue?
-                </p>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    type="button"
-                    data-ocid="settings.cloud.pull.confirm_button"
-                    onClick={handlePullCloud}
-                    style={{
-                      flex: 1,
-                      padding: "8px 12px",
-                      borderRadius: 10,
-                      border: "1px solid rgba(245,158,11,0.5)",
-                      background: "rgba(245,158,11,0.15)",
-                      color: "#F59E0B",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Yes, overwrite
-                  </button>
-                  <button
-                    type="button"
-                    data-ocid="settings.cloud.pull.cancel_button"
-                    onClick={() => setConfirmPullCloud(false)}
-                    style={{
-                      flex: 1,
-                      padding: "8px 12px",
-                      borderRadius: 10,
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      background: "rgba(255,255,255,0.05)",
-                      color: palette.textMuted,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
+                  {truncatedPrincipal}
+                </span>
               </div>
-            )}
 
-            {/* Logout + Delete row */}
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              {/* Sync status */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 12,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color:
+                      cloudSyncStatus === "synced"
+                        ? "#22C55E"
+                        : cloudSyncStatus === "syncing"
+                          ? palette.accent
+                          : cloudSyncStatus === "error"
+                            ? "#EF4444"
+                            : "rgba(255,255,255,0.4)",
+                    background:
+                      cloudSyncStatus === "synced"
+                        ? "rgba(34,197,94,0.10)"
+                        : cloudSyncStatus === "syncing"
+                          ? `${palette.accent}14`
+                          : "rgba(255,255,255,0.06)",
+                    border:
+                      cloudSyncStatus === "synced"
+                        ? "1px solid rgba(34,197,94,0.3)"
+                        : cloudSyncStatus === "syncing"
+                          ? `1px solid ${palette.accent}40`
+                          : "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                  }}
+                >
+                  {cloudSyncStatus === "synced"
+                    ? "\u2714\ufe0f Synced"
+                    : cloudSyncStatus === "syncing"
+                      ? "\u21bb Syncing…"
+                      : cloudSyncStatus === "error"
+                        ? "\u26a0\ufe0f Sync Error"
+                        : "\u2601\ufe0f Offline"}
+                </span>
+                {lastSyncedAt && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "rgba(255,255,255,0.35)",
+                    }}
+                  >
+                    {lastSyncedAt instanceof Date
+                      ? lastSyncedAt.toLocaleTimeString()
+                      : String(lastSyncedAt)}
+                  </span>
+                )}
+              </div>
+
+              {/* Logout button */}
               <button
                 type="button"
-                data-ocid="settings.cloud.logout.button"
+                data-ocid="settings.account.logout.button"
                 onClick={logout}
                 style={{
-                  flex: 1,
-                  padding: "9px 12px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(255,255,255,0.04)",
-                  color: "rgba(255,255,255,0.6)",
+                  padding: "10px 16px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(239,68,68,0.3)",
+                  background: "rgba(239,68,68,0.08)",
+                  color: "#EF4444",
                   fontSize: 13,
                   fontWeight: 600,
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
                   gap: 6,
-                  transition: "all 0.2s",
                 }}
               >
                 <LogOut size={14} />
                 Logout
               </button>
+            </>
+          )}
+        </div>
 
-              {!confirmDeleteCloud ? (
+        {/* Profile */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <User size={13} /> Profile
+          </div>
+          <input
+            id="settings-username"
+            data-ocid="settings.username.input"
+            type="text"
+            value={username}
+            onChange={(e) => setUsernameLocal(e.target.value)}
+            placeholder="Your name"
+            style={inputStyle}
+          />
+          <button
+            type="button"
+            data-ocid="settings.username.save_button"
+            onClick={handleSaveName}
+            style={{
+              padding: "10px 20px",
+              borderRadius: 50,
+              border: saved
+                ? "1px solid rgba(34,197,94,0.5)"
+                : `1px solid ${palette.accent}50`,
+              background: saved
+                ? "rgba(34,197,94,0.12)"
+                : `${palette.accent}14`,
+              color: saved ? "#22C55E" : palette.accent,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: "pointer",
+              boxShadow: saved
+                ? "0 0 10px rgba(34,197,94,0.3)"
+                : `0 0 10px ${palette.accentGlow}25`,
+              transition: "all 0.3s",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            {saved && <Check size={14} />}
+            {saved ? "Saved!" : "Save Name"}
+          </button>
+        </div>
+
+        {/* Install App section — only shown when not installed and not standalone */}
+        {!isPwaInstalled && !isStandaloneMode && (
+          <div style={sectionStyle}>
+            <div style={labelStyle}>
+              <Download size={13} /> Install App
+            </div>
+            {isIOSDevice ? (
+              <IOSInstallCard />
+            ) : deferredInstallPrompt ? (
+              <button
+                type="button"
+                data-ocid="settings.install.primary_button"
+                onClick={handleInstallApp}
+                style={{
+                  width: "100%",
+                  padding: "13px 16px",
+                  borderRadius: 12,
+                  border: `1px solid ${palette.accent}50`,
+                  background: `${palette.accent}14`,
+                  color: palette.accent,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  boxShadow: `0 0 16px ${palette.accentGlow}25`,
+                }}
+              >
+                <Download size={16} />
+                Add Naksha to Home Screen
+              </button>
+            ) : (
+              <p
+                style={{
+                  fontSize: 12,
+                  color: palette.textMuted,
+                  margin: 0,
+                  lineHeight: 1.6,
+                }}
+              >
+                Open this page in Chrome on Android and tap the install prompt
+                to add Naksha to your home screen.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Theme Center */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <Palette size={13} /> Theme Center
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 10,
+            }}
+          >
+            {allPalettes.map((p) => {
+              const isActive = paletteId === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  data-ocid={`settings.theme.${p.id}.button`}
+                  onClick={() => setPalette(p.id as PaletteId)}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "10px 6px",
+                    borderRadius: 14,
+                    border: isActive
+                      ? `1.5px solid ${p.accent}`
+                      : "1px solid rgba(255,255,255,0.08)",
+                    background: isActive ? `${p.accent}14` : p.bg,
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                    boxShadow: isActive ? `0 0 14px ${p.accentGlow}50` : "none",
+                    position: "relative",
+                  }}
+                >
+                  {isActive && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 4,
+                        right: 4,
+                        width: 14,
+                        height: 14,
+                        borderRadius: "50%",
+                        background: p.accent,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        boxShadow: `0 0 6px ${p.accentGlow}`,
+                      }}
+                    >
+                      <Check size={8} color="#000" strokeWidth={3} />
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "50%",
+                      background: p.accent,
+                      boxShadow: `0 0 12px ${p.accentGlow}80`,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: isActive ? p.accent : "rgba(255,255,255,0.5)",
+                      fontWeight: isActive ? 700 : 400,
+                      textAlign: "center",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {p.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Notifications */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            {notifPerm === "granted" ? (
+              <Bell size={13} />
+            ) : (
+              <BellOff size={13} />
+            )}
+            Notifications
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 14,
+            }}
+          >
+            <span style={{ fontSize: 14, color: palette.text }}>Status</span>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: notifColor,
+                background: `${notifColor}14`,
+                border: `1px solid ${notifColor}40`,
+                borderRadius: 20,
+                padding: "3px 10px",
+                boxShadow:
+                  notifPerm === "granted"
+                    ? "0 0 8px rgba(34,197,94,0.3)"
+                    : "none",
+              }}
+            >
+              {notifLabel}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            data-ocid="settings.notifications.primary_button"
+            onClick={handleEnableNotifications}
+            style={{
+              width: "100%",
+              padding: "11px 16px",
+              borderRadius: 12,
+              border:
+                notifPerm === "granted"
+                  ? "1px solid rgba(34,197,94,0.4)"
+                  : notifPerm === "denied"
+                    ? "1px solid rgba(239,68,68,0.4)"
+                    : `1px solid ${palette.accent}50`,
+              background:
+                notifPerm === "granted"
+                  ? "rgba(34,197,94,0.08)"
+                  : notifPerm === "denied"
+                    ? "rgba(239,68,68,0.08)"
+                    : `${palette.accent}14`,
+              color:
+                notifPerm === "granted"
+                  ? "#22C55E"
+                  : notifPerm === "denied"
+                    ? "#EF4444"
+                    : palette.accent,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 10,
+              transition: "all 0.2s",
+            }}
+          >
+            <Bell size={15} />
+            {notifPerm === "granted"
+              ? "Notifications Enabled \u2705"
+              : notifPerm === "denied"
+                ? "Enable in Phone Settings"
+                : "Enable Timer Notifications"}
+          </button>
+
+          <button
+            type="button"
+            data-ocid="settings.notifications.secondary_button"
+            onClick={handleTestNotification}
+            disabled={testNotifCountdown !== null}
+            style={{
+              width: "100%",
+              padding: "11px 16px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.05)",
+              color: testNotifCountdown !== null ? "#F59E0B" : palette.text,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: testNotifCountdown !== null ? "not-allowed" : "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              opacity: testNotifCountdown !== null ? 0.85 : 1,
+              transition: "all 0.2s",
+            }}
+          >
+            <Bell size={15} />
+            {testNotifCountdown !== null
+              ? `Testing in ${testNotifCountdown}s\u2026`
+              : "Test Notification (5s delay)"}
+          </button>
+
+          {notifPerm === "denied" && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: "rgba(239,68,68,0.08)",
+                border: "1px solid rgba(239,68,68,0.2)",
+                fontSize: 12,
+                color: "rgba(239,68,68,0.9)",
+                lineHeight: 1.5,
+              }}
+            >
+              Notifications are blocked. Tap \u201cEnable in Phone
+              Settings\u201d above for instructions.
+            </div>
+          )}
+
+          <button
+            type="button"
+            data-ocid="settings.permissions.button"
+            onClick={() => setShowPermManager(true)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 10,
+              padding: "10px 14px",
+              color: "rgba(255,255,255,0.7)",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              width: "100%",
+              marginTop: 8,
+            }}
+          >
+            <Shield size={15} />
+            Permission Manager
+          </button>
+        </div>
+
+        {/* Data Management */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <FolderOpen size={13} /> Data Management
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 14,
+              padding: "10px 12px",
+              borderRadius: 12,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            {folderLinked ? (
+              <FolderOpen
+                size={16}
+                color={backupStatusColor}
+                style={{
+                  filter:
+                    status === "saved"
+                      ? "drop-shadow(0 0 6px rgba(34,197,94,0.8))"
+                      : undefined,
+                  transition: "color 0.4s, filter 0.4s",
+                  flexShrink: 0,
+                }}
+              />
+            ) : (
+              <WifiOff size={16} color="#EF4444" style={{ flexShrink: 0 }} />
+            )}
+            <span style={{ fontSize: 13, color: palette.text, flex: 1 }}>
+              {folderLinked ? (
+                <>
+                  Master Folder:{" "}
+                  <strong
+                    style={{ color: "#FFFFFF", fontWeight: 700, fontSize: 13 }}
+                  >
+                    {currentFolderName || "(linked)"}
+                  </strong>
+                </>
+              ) : (
+                "No Folder Linked"
+              )}
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                color: folderLinked ? backupStatusColor : "#EF4444",
+                fontWeight: 600,
+              }}
+            >
+              {folderLinked ? backupStatusLabel : "Disconnected"}
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 10,
+            }}
+          >
+            <button
+              type="button"
+              data-ocid="settings.monarch.primary_button"
+              onClick={handleSafeRefresh}
+              disabled={refreshing}
+              style={{
+                flex: 1,
+                padding: "11px 16px",
+                borderRadius: 12,
+                border: `1px solid ${palette.accent}40`,
+                background: `${palette.accent}0C`,
+                color: palette.accent,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: refreshing ? "not-allowed" : "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                opacity: refreshing ? 0.7 : 1,
+                transition: "all 0.2s",
+              }}
+            >
+              <RefreshCw
+                size={15}
+                style={{
+                  animation: refreshing ? "spin 0.6s linear infinite" : "none",
+                }}
+              />
+              {refreshing ? "Saving\u2026" : "Refresh & Sync"}
+            </button>
+            {(status === "saved" || status === "idle") && !refreshing && (
+              <div
+                data-ocid="settings.monarch.success_state"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "6px 10px",
+                  borderRadius: 20,
+                  background: "rgba(34,197,94,0.10)",
+                  border: "1px solid rgba(34,197,94,0.3)",
+                  flexShrink: 0,
+                }}
+              >
+                <CheckCircle size={13} color="#22C55E" />
+                <span
+                  style={{ fontSize: 11, color: "#22C55E", fontWeight: 600 }}
+                >
+                  Saved
+                </span>
+              </div>
+            )}
+          </div>
+
+          {isFolderSystemSupported() && (
+            <button
+              type="button"
+              data-ocid="settings.monarch.link_button"
+              onClick={handleSelectFolder}
+              style={{
+                width: "100%",
+                padding: "11px 16px",
+                borderRadius: 12,
+                border: folderLinked
+                  ? "1.5px solid rgba(34,197,94,0.5)"
+                  : `1px solid ${palette.accent}40`,
+                background: folderLinked
+                  ? "rgba(34,197,94,0.10)"
+                  : `${palette.accent}0C`,
+                color: folderLinked ? "#22C55E" : palette.accent,
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: folderLinked ? 6 : 10,
+                transition: "all 0.2s",
+                boxShadow: folderLinked
+                  ? "0 0 14px rgba(34,197,94,0.25), inset 0 0 0 1px rgba(34,197,94,0.2)"
+                  : "none",
+              }}
+            >
+              <FolderOpen size={15} />
+              {folderLinked ? "Re-select Folder" : "Select Folder"}
+            </button>
+          )}
+
+          {folderLinked && currentFolderName && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginBottom: 10,
+                padding: "8px 12px",
+                borderRadius: 10,
+                background: "rgba(34,197,94,0.06)",
+                border: "1px solid rgba(34,197,94,0.15)",
+              }}
+            >
+              <FolderOpen size={13} color="#22C55E" style={{ flexShrink: 0 }} />
+              <span
+                style={{
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: "#FFFFFF",
+                  letterSpacing: "0.01em",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {currentFolderName}
+              </span>
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 10,
+            }}
+          >
+            <button
+              type="button"
+              data-ocid="settings.monarch.change_dir.button"
+              onClick={handleSelectFolder}
+              style={{
+                flex: 1,
+                padding: "10px 14px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.05)",
+                color: palette.text,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                transition: "all 0.2s",
+              }}
+            >
+              <FolderOpen size={14} />
+              Change Directory
+            </button>
+            <div
+              style={{
+                fontSize: 11,
+                color: "rgba(255,255,255,0.4)",
+                padding: "6px 10px",
+                borderRadius: 10,
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                maxWidth: 140,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={
+                isCapacitorNative()
+                  ? `Documents/NakshaData${currentFolderName && currentFolderName !== "Documents" ? ` \u2192 ${currentFolderName}` : ""}`
+                  : currentFolderName || "NakshaData (default)"
+              }
+            >
+              {isCapacitorNative()
+                ? "Documents/NakshaData"
+                : currentFolderName
+                  ? currentFolderName
+                  : "NakshaData (default)"}
+            </div>
+          </div>
+
+          {!isFolderSystemSupported() && (
+            <p
+              style={{
+                fontSize: 12,
+                color: palette.textMuted,
+                marginBottom: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              Folder picker is not supported in this browser. Use Export/Import
+              below to back up your data manually.
+            </p>
+          )}
+
+          {folderLinked && (
+            <button
+              type="button"
+              data-ocid="settings.monarch.secondary_button"
+              onClick={handleTestConnection}
+              style={{
+                width: "100%",
+                padding: "11px 16px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.05)",
+                color: palette.text,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 10,
+                transition: "all 0.2s",
+              }}
+            >
+              <CheckCircle size={15} />
+              Test Connection
+            </button>
+          )}
+
+          {testResult && (
+            <div
+              data-ocid="settings.monarch.success_state"
+              style={{
+                marginBottom: 10,
+                padding: "8px 12px",
+                borderRadius: 8,
+                background: testResult.startsWith("\u274c")
+                  ? "rgba(239,68,68,0.10)"
+                  : "rgba(34,197,94,0.10)",
+                border: testResult.startsWith("\u274c")
+                  ? "1px solid rgba(239,68,68,0.3)"
+                  : "1px solid rgba(34,197,94,0.3)",
+                fontSize: 12,
+                color: testResult.startsWith("\u274c") ? "#EF4444" : "#22C55E",
+                lineHeight: 1.4,
+              }}
+            >
+              {testResult}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              type="button"
+              data-ocid="settings.monarch.export_button"
+              onClick={handleExport}
+              style={{
+                flex: 1,
+                padding: "11px 12px",
+                borderRadius: 12,
+                border: `1px solid ${palette.accent}40`,
+                background: `${palette.accent}0C`,
+                color: palette.accent,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              <Download size={14} /> Export Data
+            </button>
+            <button
+              type="button"
+              data-ocid="settings.monarch.import_button"
+              onClick={handleImport}
+              style={{
+                flex: 1,
+                padding: "11px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.05)",
+                color: palette.text,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              <Upload size={14} /> Import Data
+            </button>
+          </div>
+
+          {importResult && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "8px 12px",
+                borderRadius: 8,
+                background: importResult.startsWith("Import failed")
+                  ? "rgba(239,68,68,0.10)"
+                  : "rgba(34,197,94,0.10)",
+                border: importResult.startsWith("Import failed")
+                  ? "1px solid rgba(239,68,68,0.3)"
+                  : "1px solid rgba(34,197,94,0.3)",
+                fontSize: 12,
+                color: importResult.startsWith("Import failed")
+                  ? "#EF4444"
+                  : "#22C55E",
+                lineHeight: 1.4,
+              }}
+            >
+              {importResult}
+            </div>
+          )}
+        </div>
+
+        {/* Browser Storage */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <Database size={13} /> Browser Storage
+          </div>
+          {storageEstimate && (
+            <p style={{ fontSize: 14, color: palette.text, margin: "0 0 8px" }}>
+              Local usage:{" "}
+              <strong style={{ color: palette.accent }}>
+                {storageEstimate}
+              </strong>
+            </p>
+          )}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <span style={{ fontSize: 14, color: palette.text }}>
+              Persistent:{" "}
+              <strong
+                style={{ color: persistedStorage ? "#22C55E" : "#F59E0B" }}
+              >
+                {persistedStorage === null
+                  ? "..."
+                  : persistedStorage
+                    ? "Yes"
+                    : "No"}
+              </strong>
+            </span>
+            {!persistedStorage && (
+              <button
+                type="button"
+                data-ocid="settings.storage.primary_button"
+                onClick={handlePersistStorage}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 50,
+                  border: `1px solid ${palette.accent}40`,
+                  background: `${palette.accent}10`,
+                  color: palette.accent,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Enable
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Appearance */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <Eye size={13} /> Appearance
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <div
+              style={{
+                fontSize: 13,
+                color: palette.text,
+                fontWeight: 600,
+                marginBottom: 8,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <Image size={13} style={{ display: "inline" }} /> Background Image
+            </div>
+            {appearance.backgroundImage ? (
+              <div style={{ marginBottom: 10 }}>
+                <img
+                  src={appearance.backgroundImage}
+                  alt="Background preview"
+                  style={{
+                    width: "100%",
+                    height: 80,
+                    objectFit: "cover",
+                    borderRadius: 10,
+                    marginBottom: 8,
+                    border: "1px solid rgba(255,255,255,0.10)",
+                  }}
+                />
                 <button
                   type="button"
-                  data-ocid="settings.cloud.delete.delete_button"
-                  onClick={() => setConfirmDeleteCloud(true)}
+                  data-ocid="settings.appearance.delete_button"
+                  onClick={() =>
+                    setAppearance({ ...appearance, backgroundImage: null })
+                  }
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 50,
+                    border: "1px solid rgba(239,68,68,0.4)",
+                    background: "rgba(239,68,68,0.08)",
+                    color: "#EF4444",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    marginBottom: 8,
+                  }}
+                >
+                  Remove Image
+                </button>
+              </div>
+            ) : null}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleBgUpload}
+              style={{ display: "none" }}
+            />
+            <button
+              type="button"
+              data-ocid="settings.appearance.upload_button"
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 50,
+                border: "1px dashed rgba(255,255,255,0.20)",
+                background: "transparent",
+                color: palette.textMuted,
+                fontSize: 13,
+                cursor: "pointer",
+              }}
+            >
+              Upload Image
+            </button>
+            {appearance.backgroundImage &&
+              sliderRow("Opacity", appearance.backgroundOpacity, (v) =>
+                setAppearance({ ...appearance, backgroundOpacity: v }),
+              )}
+          </div>
+
+          <div>
+            <div
+              style={{
+                fontSize: 13,
+                color: palette.text,
+                fontWeight: 600,
+                marginBottom: 12,
+              }}
+            >
+              \u2728 Living Space
+            </div>
+            {toggleRow(
+              "Stars",
+              <Star size={14} color={palette.textMuted} />,
+              appearance.starsEnabled,
+              (v) => setAppearance({ ...appearance, starsEnabled: v }),
+            )}
+            {appearance.starsEnabled &&
+              sliderRow("Opacity", appearance.starsOpacity, (v) =>
+                setAppearance({ ...appearance, starsOpacity: v }),
+              )}
+            <div style={{ height: 10 }} />
+            {toggleRow(
+              "Shooting Stars",
+              <Zap size={14} color={palette.textMuted} />,
+              appearance.shootingStarsEnabled,
+              (v) => setAppearance({ ...appearance, shootingStarsEnabled: v }),
+            )}
+            {appearance.shootingStarsEnabled &&
+              sliderRow("Opacity", appearance.shootingStarsOpacity, (v) =>
+                setAppearance({ ...appearance, shootingStarsOpacity: v }),
+              )}
+            <div style={{ height: 10 }} />
+            {toggleRow(
+              "Orion Belt",
+              <Star size={14} color={palette.textMuted} />,
+              appearance.orionBeltEnabled,
+              (v) => setAppearance({ ...appearance, orionBeltEnabled: v }),
+            )}
+            {appearance.orionBeltEnabled &&
+              sliderRow("Opacity", appearance.orionBeltOpacity, (v) =>
+                setAppearance({ ...appearance, orionBeltOpacity: v }),
+              )}
+          </div>
+        </div>
+
+        {/* ===== CLOUD SYNC & ACCOUNT ===== */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <Cloud size={13} /> Cloud Sync &amp; Account
+          </div>
+
+          {!isLoggedIn ? (
+            /* --- Logged OUT state --- */
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 14,
+                }}
+              >
+                <CloudOff size={15} color="rgba(255,255,255,0.35)" />
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "rgba(255,255,255,0.4)",
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                  }}
+                >
+                  Not logged in
+                </span>
+              </div>
+              <p
+                style={{
+                  fontSize: 13,
+                  color: palette.textMuted,
+                  lineHeight: 1.5,
+                  margin: "0 0 14px",
+                }}
+              >
+                Log in to backup your study data to the cloud and access it from
+                any device \u2014 even if you lose your phone.
+              </p>
+              <button
+                type="button"
+                data-ocid="settings.cloud.login.primary_button"
+                onClick={login}
+                style={{
+                  width: "100%",
+                  padding: "13px 16px",
+                  borderRadius: 14,
+                  border: `1.5px solid ${palette.accent}60`,
+                  background: `${palette.accent}18`,
+                  color: palette.accent,
+                  fontSize: 15,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  boxShadow: `0 0 20px ${palette.accentGlow}30`,
+                  transition: "all 0.25s",
+                }}
+              >
+                <LogIn size={17} />
+                Login with Internet Identity
+              </button>
+            </>
+          ) : (
+            /* --- Logged IN state --- */
+            <>
+              {/* Principal pill */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <User size={14} color="#22C55E" />
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#22C55E",
+                    background: "rgba(34,197,94,0.10)",
+                    border: "1px solid rgba(34,197,94,0.35)",
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                    fontFamily: "monospace",
+                    boxShadow: "0 0 8px rgba(34,197,94,0.2)",
+                  }}
+                >
+                  {truncatedPrincipal}
+                </span>
+              </div>
+
+              {/* Sync status + last synced */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 14,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: cloudStatusColor,
+                    background: `${cloudStatusColor}14`,
+                    border: `1px solid ${cloudStatusColor}40`,
+                    borderRadius: 20,
+                    padding: "3px 10px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    boxShadow:
+                      cloudSyncStatus === "synced"
+                        ? "0 0 8px rgba(34,197,94,0.25)"
+                        : cloudSyncStatus === "syncing"
+                          ? "0 0 8px rgba(245,158,11,0.3)"
+                          : "none",
+                    animation:
+                      cloudSyncStatus === "syncing"
+                        ? "pulse 1s ease-in-out infinite"
+                        : "none",
+                  }}
+                >
+                  <Cloud size={11} />
+                  {cloudStatusLabel}
+                </span>
+                {lastSyncLabel && (
+                  <span style={{ fontSize: 11, color: palette.textMuted }}>
+                    Last synced: {lastSyncLabel}
+                  </span>
+                )}
+              </div>
+
+              {/* Feedback message */}
+              {cloudMsg && (
+                <div
+                  data-ocid="settings.cloud.success_state"
+                  style={{
+                    marginBottom: 12,
+                    padding: "8px 12px",
+                    borderRadius: 8,
+                    background: cloudMsg.startsWith("\u274c")
+                      ? "rgba(239,68,68,0.10)"
+                      : "rgba(34,197,94,0.10)",
+                    border: cloudMsg.startsWith("\u274c")
+                      ? "1px solid rgba(239,68,68,0.3)"
+                      : "1px solid rgba(34,197,94,0.3)",
+                    fontSize: 12,
+                    color: cloudMsg.startsWith("\u274c")
+                      ? "#EF4444"
+                      : "#22C55E",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {cloudMsg}
+                </div>
+              )}
+
+              {/* Sync Now button */}
+              <button
+                type="button"
+                data-ocid="settings.cloud.sync.primary_button"
+                onClick={handleSyncNow}
+                disabled={cloudSyncStatus === "syncing"}
+                style={{
+                  width: "100%",
+                  padding: "11px 16px",
+                  borderRadius: 12,
+                  border: `1px solid ${palette.accent}50`,
+                  background: `${palette.accent}12`,
+                  color: palette.accent,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor:
+                    cloudSyncStatus === "syncing" ? "not-allowed" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 8,
+                  opacity: cloudSyncStatus === "syncing" ? 0.7 : 1,
+                  transition: "all 0.2s",
+                  boxShadow: `0 0 12px ${palette.accentGlow}20`,
+                }}
+              >
+                <RefreshCw
+                  size={15}
+                  style={{
+                    animation:
+                      cloudSyncStatus === "syncing"
+                        ? "spin 0.6s linear infinite"
+                        : "none",
+                  }}
+                />
+                {cloudSyncStatus === "syncing" ? "Syncing\u2026" : "Sync Now"}
+              </button>
+
+              {/* Pull from Cloud button */}
+              {!confirmPullCloud ? (
+                <button
+                  type="button"
+                  data-ocid="settings.cloud.pull.secondary_button"
+                  onClick={() => setConfirmPullCloud(true)}
+                  style={{
+                    width: "100%",
+                    padding: "11px 16px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.05)",
+                    color: palette.text,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 8,
+                    transition: "all 0.2s",
+                  }}
+                >
+                  <Download size={15} />
+                  Pull from Cloud
+                </button>
+              ) : (
+                <div
+                  style={{
+                    marginBottom: 8,
+                    padding: "12px 14px",
+                    borderRadius: 12,
+                    background: "rgba(245,158,11,0.08)",
+                    border: "1px solid rgba(245,158,11,0.3)",
+                  }}
+                >
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "#F59E0B",
+                      margin: "0 0 10px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    \u26a0\ufe0f This will overwrite your local data with cloud
+                    data. Continue?
+                  </p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      type="button"
+                      data-ocid="settings.cloud.pull.confirm_button"
+                      onClick={handlePullCloud}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(245,158,11,0.5)",
+                        background: "rgba(245,158,11,0.15)",
+                        color: "#F59E0B",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Yes, overwrite
+                    </button>
+                    <button
+                      type="button"
+                      data-ocid="settings.cloud.pull.cancel_button"
+                      onClick={() => setConfirmPullCloud(false)}
+                      style={{
+                        flex: 1,
+                        padding: "8px 12px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        background: "rgba(255,255,255,0.05)",
+                        color: palette.textMuted,
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Logout + Delete row */}
+              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                <button
+                  type="button"
+                  data-ocid="settings.cloud.logout.button"
+                  onClick={logout}
                   style={{
                     flex: 1,
                     padding: "9px 12px",
                     borderRadius: 10,
-                    border: "1px solid rgba(239,68,68,0.3)",
-                    background: "rgba(239,68,68,0.06)",
-                    color: "#EF4444",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.04)",
+                    color: "rgba(255,255,255,0.6)",
                     fontSize: 13,
                     fontWeight: 600,
                     cursor: "pointer",
@@ -1723,264 +1949,293 @@ const SettingsScreen: FC = () => {
                     transition: "all 0.2s",
                   }}
                 >
-                  <Trash2 size={14} />
-                  Delete Cloud Data
+                  <LogOut size={14} />
+                  Logout
                 </button>
-              ) : (
-                <button
-                  type="button"
-                  data-ocid="settings.cloud.delete.confirm_button"
-                  onClick={handleDeleteCloud}
-                  style={{
-                    flex: 1,
-                    padding: "9px 12px",
-                    borderRadius: 10,
-                    border: "1.5px solid rgba(239,68,68,0.7)",
-                    background: "rgba(239,68,68,0.15)",
-                    color: "#EF4444",
-                    fontSize: 13,
-                    fontWeight: 800,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    animation: "pulse 0.8s ease-in-out 2",
-                  }}
-                >
-                  \u274c Confirm Delete
-                </button>
-              )}
-            </div>
-          </>
-        )}
-      </div>
 
-      {/* ===== SHARE NAKSHA ===== */}
-      <div style={sectionStyle}>
-        <div style={labelStyle}>
-          <Share2 size={13} /> Share Naksha
-        </div>
-
-        <p
-          style={{
-            fontSize: 13,
-            color: palette.textMuted,
-            lineHeight: 1.6,
-            margin: "0 0 16px",
-          }}
-        >
-          Share Naksha with friends! They can open it in any browser and add it
-          to their home screen \u2014 no install required.
-        </p>
-
-        {/* Action buttons row */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
-          <button
-            type="button"
-            data-ocid="settings.share.copy.primary_button"
-            onClick={handleCopyLink}
-            style={{
-              flex: 1,
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: copied
-                ? "1px solid rgba(34,197,94,0.5)"
-                : "1px solid rgba(255,255,255,0.14)",
-              background: copied
-                ? "rgba(34,197,94,0.10)"
-                : "rgba(255,255,255,0.05)",
-              color: copied ? "#22C55E" : palette.text,
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 7,
-              transition: "all 0.25s",
-              boxShadow: copied ? "0 0 12px rgba(34,197,94,0.2)" : "none",
-            }}
-          >
-            {copied ? <Check size={15} /> : <Copy size={15} />}
-            {copied ? "Copied!" : "Copy Link"}
-          </button>
-
-          <button
-            type="button"
-            data-ocid="settings.share.share.primary_button"
-            onClick={handleShare}
-            style={{
-              flex: 1,
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: `1.5px solid ${palette.accent}55`,
-              background: `${palette.accent}15`,
-              color: palette.accent,
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 7,
-              boxShadow: `0 0 14px ${palette.accentGlow}25`,
-              transition: "all 0.25s",
-            }}
-          >
-            <Share2 size={15} />
-            Share
-          </button>
-        </div>
-
-        {/* How to install as App — expandable card */}
-        <button
-          type="button"
-          data-ocid="settings.share.install_guide.toggle"
-          onClick={() => setShowInstallGuide((v) => !v)}
-          style={{
-            width: "100%",
-            padding: "12px 14px",
-            borderRadius: 12,
-            border: showInstallGuide
-              ? `1px solid ${palette.accent}40`
-              : "1px solid rgba(255,255,255,0.10)",
-            background: showInstallGuide
-              ? `${palette.accent}0A`
-              : "rgba(255,255,255,0.04)",
-            color: showInstallGuide ? palette.accent : palette.textMuted,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            transition: "all 0.2s",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Smartphone size={14} />
-            How to install as App
-          </div>
-          {showInstallGuide ? (
-            <ChevronUp size={14} />
-          ) : (
-            <ChevronDown size={14} />
-          )}
-        </button>
-
-        {showInstallGuide && (
-          <div
-            style={{
-              marginTop: 8,
-              padding: "14px 16px",
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: palette.accent,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                  marginBottom: 5,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                \ud83e\udd16 Android
+                {!confirmDeleteCloud ? (
+                  <button
+                    type="button"
+                    data-ocid="settings.cloud.delete.delete_button"
+                    onClick={() => setConfirmDeleteCloud(true)}
+                    style={{
+                      flex: 1,
+                      padding: "9px 12px",
+                      borderRadius: 10,
+                      border: "1px solid rgba(239,68,68,0.3)",
+                      background: "rgba(239,68,68,0.06)",
+                      color: "#EF4444",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    <Trash2 size={14} />
+                    Delete Cloud Data
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    data-ocid="settings.cloud.delete.confirm_button"
+                    onClick={handleDeleteCloud}
+                    style={{
+                      flex: 1,
+                      padding: "9px 12px",
+                      borderRadius: 10,
+                      border: "1.5px solid rgba(239,68,68,0.7)",
+                      background: "rgba(239,68,68,0.15)",
+                      color: "#EF4444",
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      animation: "pulse 0.8s ease-in-out 2",
+                    }}
+                  >
+                    \u274c Confirm Delete
+                  </button>
+                )}
               </div>
-              <p
-                style={{
-                  fontSize: 13,
-                  color: palette.text,
-                  margin: 0,
-                  lineHeight: 1.6,
-                }}
-              >
-                Open in <strong>Chrome</strong> \u2192 tap the{" "}
-                <strong>\u22ef menu</strong> (top-right) \u2192 tap{" "}
-                <strong>\u2018Add to Home screen\u2019</strong>
-              </p>
+            </>
+          )}
+        </div>
+
+        {/* ===== SHARE NAKSHA ===== */}
+        <div style={sectionStyle}>
+          <div style={labelStyle}>
+            <Share2 size={13} /> Share Naksha
+          </div>
+
+          <p
+            style={{
+              fontSize: 13,
+              color: palette.textMuted,
+              lineHeight: 1.6,
+              margin: "0 0 16px",
+            }}
+          >
+            Share Naksha with friends! They can open it in any browser and add
+            it to their home screen \u2014 no install required.
+          </p>
+
+          {/* Action buttons row */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+            <button
+              type="button"
+              data-ocid="settings.share.copy.primary_button"
+              onClick={handleCopyLink}
+              style={{
+                flex: 1,
+                padding: "12px 14px",
+                borderRadius: 12,
+                border: copied
+                  ? "1px solid rgba(34,197,94,0.5)"
+                  : "1px solid rgba(255,255,255,0.14)",
+                background: copied
+                  ? "rgba(34,197,94,0.10)"
+                  : "rgba(255,255,255,0.05)",
+                color: copied ? "#22C55E" : palette.text,
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                transition: "all 0.25s",
+                boxShadow: copied ? "0 0 12px rgba(34,197,94,0.2)" : "none",
+              }}
+            >
+              {copied ? <Check size={15} /> : <Copy size={15} />}
+              {copied ? "Copied!" : "Copy Link"}
+            </button>
+
+            <button
+              type="button"
+              data-ocid="settings.share.share.primary_button"
+              onClick={handleShare}
+              style={{
+                flex: 1,
+                padding: "12px 14px",
+                borderRadius: 12,
+                border: `1.5px solid ${palette.accent}55`,
+                background: `${palette.accent}15`,
+                color: palette.accent,
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 7,
+                boxShadow: `0 0 14px ${palette.accentGlow}25`,
+                transition: "all 0.25s",
+              }}
+            >
+              <Share2 size={15} />
+              Share
+            </button>
+          </div>
+
+          {/* How to install as App — expandable card */}
+          <button
+            type="button"
+            data-ocid="settings.share.install_guide.toggle"
+            onClick={() => setShowInstallGuide((v) => !v)}
+            style={{
+              width: "100%",
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: showInstallGuide
+                ? `1px solid ${palette.accent}40`
+                : "1px solid rgba(255,255,255,0.10)",
+              background: showInstallGuide
+                ? `${palette.accent}0A`
+                : "rgba(255,255,255,0.04)",
+              color: showInstallGuide ? palette.accent : palette.textMuted,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              transition: "all 0.2s",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Smartphone size={14} />
+              How to install as App
             </div>
+            {showInstallGuide ? (
+              <ChevronUp size={14} />
+            ) : (
+              <ChevronDown size={14} />
+            )}
+          </button>
+
+          {showInstallGuide && (
             <div
               style={{
-                height: 1,
-                background: "rgba(255,255,255,0.07)",
+                marginTop: 8,
+                padding: "14px 16px",
+                borderRadius: 12,
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
               }}
-            />
-            <div>
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: palette.accent,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    marginBottom: 5,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  \ud83e\udd16 Android
+                </div>
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: palette.text,
+                    margin: 0,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Open in <strong>Chrome</strong> \u2192 tap the{" "}
+                  <strong>\u22ef menu</strong> (top-right) \u2192 tap{" "}
+                  <strong>\u2018Add to Home screen\u2019</strong>
+                </p>
+              </div>
               <div
                 style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: palette.accent,
-                  letterSpacing: "0.05em",
-                  textTransform: "uppercase",
-                  marginBottom: 5,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
+                  height: 1,
+                  background: "rgba(255,255,255,0.07)",
                 }}
-              >
-                \ud83c\udf4e iPhone
+              />
+              <div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: palette.accent,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    marginBottom: 5,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  \ud83c\udf4e iPhone
+                </div>
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: palette.text,
+                    margin: 0,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Open in <strong>Safari</strong> \u2192 tap the{" "}
+                  <strong>Share button</strong> \u2192 tap{" "}
+                  <strong>\u2018Add to Home Screen\u2019</strong>
+                </p>
               </div>
-              <p
-                style={{
-                  fontSize: 13,
-                  color: palette.text,
-                  margin: 0,
-                  lineHeight: 1.6,
-                }}
-              >
-                Open in <strong>Safari</strong> \u2192 tap the{" "}
-                <strong>Share button</strong> \u2192 tap{" "}
-                <strong>\u2018Add to Home Screen\u2019</strong>
-              </p>
             </div>
-          </div>
+          )}
+        </div>
+
+        {/* About */}
+        <div style={{ ...sectionStyle, textAlign: "center" }}>
+          <Info
+            size={24}
+            color={palette.accent}
+            style={{
+              marginBottom: 8,
+              filter: `drop-shadow(0 0 8px ${palette.accentGlow})`,
+            }}
+          />
+          <h3
+            style={{
+              fontSize: 18,
+              fontWeight: 800,
+              color: palette.text,
+              margin: "0 0 4px",
+            }}
+          >
+            Naksha \ud83e\uddedF
+          </h3>
+          <p style={{ fontSize: 13, color: palette.accent, margin: "0 0 4px" }}>
+            Your Time. Your Orbit. \ud83e\ude90
+          </p>
+          <p style={{ fontSize: 12, color: palette.textMuted, margin: 0 }}>
+            Version 1.9.0
+          </p>
+        </div>
+
+        {showPermManager && (
+          <PermissionManagerScreen
+            onDismiss={() => setShowPermManager(false)}
+          />
         )}
       </div>
-
-      {/* About */}
-      <div style={{ ...sectionStyle, textAlign: "center" }}>
-        <Info
-          size={24}
-          color={palette.accent}
-          style={{
-            marginBottom: 8,
-            filter: `drop-shadow(0 0 8px ${palette.accentGlow})`,
-          }}
-        />
-        <h3
-          style={{
-            fontSize: 18,
-            fontWeight: 800,
-            color: palette.text,
-            margin: "0 0 4px",
-          }}
-        >
-          Naksha \ud83e\uddedF
-        </h3>
-        <p style={{ fontSize: 13, color: palette.accent, margin: "0 0 4px" }}>
-          Your Time. Your Orbit. \ud83e\ude90
-        </p>
-        <p style={{ fontSize: 12, color: palette.textMuted, margin: 0 }}>
-          Version 1.9.0
-        </p>
-      </div>
-
-      {showPermManager && (
-        <PermissionManagerScreen onDismiss={() => setShowPermManager(false)} />
-      )}
     </div>
   );
 };
