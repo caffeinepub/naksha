@@ -6,11 +6,13 @@
     <!-- PWA / Native-feel viewport -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
 
-    <!-- Theme colors -->
-    <meta name="theme-color" content="#0a0f0c" />
-    <meta name="msapplication-TileColor" content="#0a0f0c" />
+    <!-- Theme color matches app body background exactly to eliminate the status bar divider line -->
+    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="theme-color" content="#0a0a0f" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#0a0a0f" media="(prefers-color-scheme: light)" />
+    <meta name="msapplication-TileColor" content="#0a0a0f" />
 
-    <!-- iOS PWA full-screen -->
+    <!-- iOS PWA full-screen: black-translucent makes status bar transparent so app bleeds behind it -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Naksha" />
@@ -34,24 +36,52 @@
 
     <title>Naksha</title>
 
-    <!-- Prevent flash of white on startup -->
+    <!--
+      CRITICAL: Set background before JS loads.
+      Must match #0a0a0f exactly — same as body background and manifest theme_color.
+      This eliminates the visible divider/border line below the status bar.
+    -->
     <style>
       html, body {
-        background: #0a0f0c;
+        background: #0a0a0f !important;
+        background-color: #0a0a0f !important;
         margin: 0;
         padding: 0;
+        border: none;
+        box-shadow: none;
+        min-height: 100%;
       }
-      /* Fixed shell — clips nothing, just provides the container */
+      /* Fixed shell — no top border, no shadow, no gaps */
       #root {
         position: fixed;
         inset: 0;
         height: 100dvh;
         overflow: hidden;
-        background: #0a0f0c;
+        background: #0a0a0f;
+        border: none;
+        box-shadow: none;
+        /* Use safe-area-inset-top so content starts exactly at the boundary with no gap */
+        padding-top: env(safe-area-inset-top, 0px);
+      }
+      /*
+       * Cover the safe-area gap at the very bottom.
+       * Matches app background exactly — no color mismatch.
+       */
+      body::after {
+        content: '';
+        display: block;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: env(safe-area-inset-bottom, 20px);
+        background-color: #0a0a0f;
+        z-index: 9999;
+        pointer-events: none;
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-B0exJhYK.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DstZRc3a.css">
+    <script type="module" crossorigin src="/assets/index-B9nd-qYA.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-B8p5no5T.css">
   </head>
   <body>
     <div id="root"></div>

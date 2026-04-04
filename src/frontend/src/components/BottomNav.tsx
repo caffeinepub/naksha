@@ -32,29 +32,36 @@ const TABS: {
   { id: "settings", label: "", Icon: Settings },
 ];
 
+/*
+ * Fixed bottom dock — flush against the screen edge.
+ * Background matches the app body (#0a0a0f) exactly so Android's system nav
+ * bar color blends seamlessly with no visible gap or line.
+ * No border-top, no box-shadow — truly seamless dock.
+ * touch-action: manipulation on every button eliminates the 300ms tap delay.
+ */
 const BottomNav: FC<Props> = ({ active, onChange }) => {
   return (
     <nav
       style={{
         position: "fixed",
-        bottom: 16,
-        left: "50%",
-        transform: "translateX(-50%)",
-        width: "calc(100% - 32px)",
-        maxWidth: 398,
-        height: 64,
-        background: "rgba(10,10,15,0.75)",
-        backdropFilter: "blur(24px)",
-        WebkitBackdropFilter: "blur(24px)",
-        border: "1px solid rgba(255,255,255,0.10)",
-        boxShadow:
-          "0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)",
-        borderRadius: 24,
+        bottom: 0,
+        left: 0,
+        width: "100%",
+        height: "calc(70px + env(safe-area-inset-bottom, 0px))",
+        background: "#0a0a0f",
+        border: "none",
+        boxShadow: "none",
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         justifyContent: "space-around",
+        paddingTop: 0,
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        paddingLeft: 0,
+        paddingRight: 0,
         zIndex: 100,
-        paddingBottom: "env(safe-area-inset-bottom)",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        touchAction: "manipulation",
       }}
     >
       {TABS.map(({ id, label, Icon }) => {
@@ -71,14 +78,17 @@ const BottomNav: FC<Props> = ({ active, onChange }) => {
               alignItems: "center",
               justifyContent: "center",
               gap: 3,
-              padding: "8px 10px",
-              minWidth: 48,
-              minHeight: 48,
-              background: isActive ? "rgba(255,255,255,0.08)" : "none",
+              padding: "12px 10px 10px",
+              flex: 1,
+              height: 70,
+              background: "none",
               border: "none",
-              borderRadius: 14,
               cursor: "pointer",
-              transition: "all 0.2s ease",
+              transition: "opacity 0.15s ease",
+              touchAction: "manipulation",
+              userSelect: "none",
+              WebkitUserSelect:
+                "none" as React.CSSProperties["WebkitUserSelect"],
             }}
           >
             <Icon

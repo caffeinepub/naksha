@@ -56,10 +56,12 @@ const TimerStatusBar: FC<Props> = ({ timerState, remaining, onGoToTimer }) => {
         width: "100%",
         maxWidth: 430,
         zIndex: 150,
-        background: "rgba(15,15,25,0.92)",
+        background: "rgba(10,10,15,0.92)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
-        borderBottom: `2px solid ${palette.accent}40`,
+        /* No border, no box-shadow — seamless into status bar */
+        border: "none",
+        boxShadow: "none",
         /* Push content below the notch / status bar */
         paddingTop: "max(10px, env(safe-area-inset-top))",
         paddingBottom: 10,
@@ -69,8 +71,6 @@ const TimerStatusBar: FC<Props> = ({ timerState, remaining, onGoToTimer }) => {
         alignItems: "center",
         gap: 10,
         cursor: "pointer",
-        border: "none",
-        boxShadow: `0 4px 24px rgba(0,0,0,0.5), 0 0 0 1px ${palette.accent}20`,
       }}
     >
       {/* Pulsing dot */}

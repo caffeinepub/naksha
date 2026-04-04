@@ -8,8 +8,8 @@
   "display": "fullscreen",
   "display_override": ["fullscreen", "window-controls-overlay", "standalone", "minimal-ui"],
   "orientation": "portrait",
-  "background_color": "#0a0f0c",
-  "theme_color": "#0a0f0c",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
   "categories": ["education", "productivity", "utilities"],
   "prefer_related_applications": false,
   "icons": [

@@ -1,6 +1,6 @@
-/* Naksha Service Worker — v19 (Full PWA offline + background notifications) */
+/* Naksha Service Worker — v22 (Full PWA offline + background notifications + live timer) */
 
-const CACHE_VERSION = 'v19';
+const CACHE_VERSION = 'v22';
 const CACHE_NAME = `naksha-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `naksha-runtime-${CACHE_VERSION}`;
 
@@ -161,6 +161,7 @@ function getElapsed() {
   return isNaN(e) ? 0 : e;
 }
 
+// ─── Legacy fallback (60s interval) — kept as backup, superseded by TIMER_TICK ───
 async function updateNotification() {
   if (!timerData) return;
 
@@ -171,45 +172,44 @@ async function updateNotification() {
   const safeRemaining = isNaN(remaining) ? 0 : Math.max(0, remaining);
   const safeElapsed = isNaN(elapsed) ? 0 : Math.max(0, elapsed);
   const safeTotal = isNaN(total) || total <= 0 ? 1 : total;
-  const pct = Math.round(Math.min(100, Math.max(0, (safeElapsed / safeTotal) * 100)));
 
-  const progressBar = buildProgressBar(safeElapsed, safeTotal);
   const timeStr = formatTime(safeRemaining);
   const topic = timerData.topic || 'Study Session';
 
   const body = timerData.isPaused
     ? `\u23f8 Paused \u2014 ${timeStr} remaining`
-    : `${progressBar} ${pct}% \u2014 ${timeStr} remaining`;
+    : `\u23f1 ${timeStr} remaining`;
 
   const actions = timerData.isPaused
     ? [{ action: 'resume', title: '\u25b6 Resume' }, { action: 'stop', title: '\u23f9 Stop' }]
     : [{ action: 'pause', title: '\u23f8 Pause' }, { action: 'stop', title: '\u23f9 Stop' }];
 
-  const notifications = await self.registration.getNotifications({ tag: 'naksha-timer' });
-  notifications.forEach((n) => n.close());
+  self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
 
-  await self.registration.showNotification(`Naksha \u23f1 ${topic}`, {
+  self.registration.showNotification(`Naksha \u23f1 ${topic}`, {
     body,
-    tag: 'naksha-timer',
+    tag: 'naksha-timer-live',
     renotify: false,
     silent: true,
     requireInteraction: true,
-    vibrate: [200, 100, 200],
     actions,
     icon: '/icon-192.png',
     badge: '/icon-192.png',
-    data: { type: 'timer' },
-  });
+    data: { type: 'timer-live' },
+  }).catch(() => {});
 }
 
 self.addEventListener('message', async (event) => {
   const { type, payload } = event.data || {};
 
+  // ─── TIMER_START: initialise state, fire first notification, set 10-min milestone interval ───
   if (type === 'TIMER_START') {
     timerData = { ...payload, isPaused: false };
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
+    // First notification via legacy path (main thread now drives per-second updates via TIMER_TICK)
     updateNotification();
+    // 60-second fallback interval (in case tab is backgrounded and TIMER_TICK messages stop)
     notificationInterval = setInterval(updateNotification, 60000);
     let minuteCount = 0;
     timerInterval = setInterval(() => {
@@ -226,6 +226,34 @@ self.addEventListener('message', async (event) => {
     }, 60000);
   }
 
+  // ─── TIMER_TICK: per-second update from main thread — replaces notification silently ───
+  if (type === 'TIMER_TICK') {
+    if (timerData && !timerData.isPaused) {
+      const remainingMs = (payload && payload.remainingMs != null) ? payload.remainingMs : getRemaining();
+      const topic = (timerData && timerData.topic) ? timerData.topic : 'Study Session';
+      const timeStr = formatTime(remainingMs);
+      const body = `\u23f1 ${timeStr} remaining`;
+
+      // Close existing then re-show — renotify:false means no sound/vibration
+      self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
+      self.registration.showNotification('Naksha Timer Running', {
+        body,
+        tag: 'naksha-timer-live',
+        renotify: false,
+        silent: true,
+        requireInteraction: true,
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        actions: [
+          { action: 'pause', title: '\u23f8 Pause' },
+          { action: 'stop', title: '\u23f9 Stop' },
+        ],
+        data: { type: 'timer-live' },
+      }).catch(() => {});
+    }
+  }
+
+  // ─── TIMER_PAUSE ───
   if (type === 'TIMER_PAUSE') {
     if (timerData) {
       timerData.isPaused = true;
@@ -234,6 +262,7 @@ self.addEventListener('message', async (event) => {
     updateNotification();
   }
 
+  // ─── TIMER_RESUME ───
   if (type === 'TIMER_RESUME') {
     if (timerData) {
       timerData.isPaused = false;
@@ -242,10 +271,23 @@ self.addEventListener('message', async (event) => {
     updateNotification();
   }
 
+  // ─── TIMER_STOP (legacy) ───
   if (type === 'TIMER_STOP') {
     timerData = null;
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
+    self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
+    self.registration.getNotifications({ tag: 'naksha-timer-done' }).then((ns) => ns.forEach((n) => n.close()));
+    self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
+  }
+
+  // ─── TIMER_CANCEL: user reset/cancelled — remove all timer notifications ───
+  if (type === 'TIMER_CANCEL') {
+    timerData = null;
+    clearInterval(notificationInterval);
+    clearInterval(timerInterval);
+    self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
+    self.registration.getNotifications({ tag: 'naksha-timer-done' }).then((ns) => ns.forEach((n) => n.close()));
     self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
   }
 
@@ -253,21 +295,45 @@ self.addEventListener('message', async (event) => {
     if (timerData) timerData = { ...timerData, ...payload };
   }
 
+  // ─── TIMER_COMPLETE (legacy) ───
   if (type === 'TIMER_COMPLETE') {
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
     timerData = null;
+    self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
     self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
     await self.registration.showNotification('Naksha \u23f1 Session Complete! \ud83c\udf89', {
       body: 'Great work! Your study session is done.',
-      tag: 'timer-done',
+      tag: 'naksha-timer-done',
       renotify: true,
       requireInteraction: true,
-      vibrate: [200, 100, 200],
+      vibrate: [200, 100, 200, 100, 400],
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       data: { type: 'timer-complete' },
     });
+  }
+
+  // ─── TIMER_COMPLETE_LIVE: fired by main thread after timer hits zero ───
+  if (type === 'TIMER_COMPLETE_LIVE') {
+    clearInterval(notificationInterval);
+    clearInterval(timerInterval);
+    timerData = null;
+    // Cancel live ongoing
+    self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
+    self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
+    // Post completion notification (dismissable, vibrates)
+    self.registration.showNotification('Naksha Timer Done! \ud83c\udf89', {
+      body: 'Your timer has finished. Tap to open.',
+      tag: 'naksha-timer-done',
+      renotify: true,
+      silent: false,
+      requireInteraction: true,
+      vibrate: [200, 100, 200, 100, 400],
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      data: { type: 'timer-complete' },
+    }).catch(() => {});
   }
 
   if (type === 'TEST_NOTIFICATION') {
@@ -340,6 +406,7 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
+  // Focus or open the app on any tap
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       if (clients.length > 0) { clients[0].focus(); }
@@ -349,7 +416,8 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 self.addEventListener('notificationclose', (event) => {
-  if (event.notification.tag === 'naksha-timer' && timerData) {
+  // If user manages to close the live notification, re-show after 15s if still running
+  if (event.notification.tag === 'naksha-timer-live' && timerData && !timerData.isPaused) {
     setTimeout(() => { if (timerData) updateNotification(); }, 15000);
   }
 });

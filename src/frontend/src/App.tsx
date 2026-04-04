@@ -1,4 +1,4 @@
-import { Bell, BellOff, RefreshCw, WifiOff } from "lucide-react";
+import { RefreshCw, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import BottomNav from "./components/BottomNav";
 import InstallPrompt from "./components/InstallPrompt";
@@ -18,15 +18,17 @@ import TimerScreen from "./screens/TimerScreen";
 import TodoScreen from "./screens/TodoScreen";
 import TopicsScreen from "./screens/TopicsScreen";
 import type { TabId, Topic } from "./types";
-import { ensureNotificationPermissionOnce } from "./utils/capacitorNotifications";
 import { ensureNakshaDataDir } from "./utils/capacitorStorage";
 import { ensureFilesystemPermissions } from "./utils/nativePermissions";
 import { PREF_KEYS, Preferences } from "./utils/preferences";
 import { getUsername } from "./utils/storage";
 
+/** Height of the fixed bottom nav dock (must match BottomNav CSS) */
+const BOTTOM_NAV_H = 70;
+
 /**
  * Minimal floating sync indicator — only visible while saving.
- * Zero chrome when idle: position fixed top-right, invisible when not saving.
+ * Zero chrome when idle.
  */
 function HeaderBar() {
   const { status } = useBackup();
@@ -59,143 +61,6 @@ function HeaderBar() {
   );
 }
 
-/**
- * Status bar above BottomNav — compact, non-fixed.
- * Shows notification status on the left and folder/storage status on the right.
- */
-function AppStatusBar() {
-  const [perm, setPerm] = useState<NotificationPermission>("default");
-  const { folderLinked, folderName } = useBackup();
-
-  useEffect(() => {
-    if ("Notification" in window) setPerm(Notification.permission);
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if ("Notification" in window) setPerm(Notification.permission);
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleBellTap = async () => {
-    await ensureNotificationPermissionOnce();
-    if ("Notification" in window) setPerm(Notification.permission);
-  };
-
-  const isDenied = perm === "denied";
-  const isGranted = perm === "granted";
-  const bellColor = isDenied
-    ? "#EF4444"
-    : isGranted
-      ? "#22C55E"
-      : "rgba(255,255,255,0.35)";
-
-  const displayFolder = folderName
-    ? folderName.slice(0, 14) + (folderName.length > 14 ? "\u2026" : "")
-    : "NakshaData";
-
-  return (
-    <div
-      data-ocid="app.status_bar"
-      style={{
-        height: 36,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingLeft: 16,
-        paddingRight: 16,
-        background: "rgba(0,0,0,0.4)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        borderTop: "1px solid rgba(255,255,255,0.07)",
-        flexShrink: 0,
-      }}
-    >
-      {/* Left: notification status */}
-      <button
-        type="button"
-        onClick={handleBellTap}
-        data-ocid="app.notifications.toggle"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: "4px 0",
-          minHeight: 28,
-        }}
-        aria-label={`Notifications: ${perm}`}
-      >
-        {isDenied ? (
-          <BellOff size={14} color={bellColor} style={{ flexShrink: 0 }} />
-        ) : (
-          <Bell
-            size={14}
-            color={bellColor}
-            style={{
-              flexShrink: 0,
-              filter: isGranted
-                ? "drop-shadow(0 0 4px rgba(34,197,94,0.7))"
-                : "none",
-              animation: isGranted
-                ? "bellPulse 2.5s ease-in-out infinite"
-                : "none",
-            }}
-          />
-        )}
-        <span
-          style={{
-            fontSize: 10,
-            color: bellColor,
-            fontWeight: 500,
-            letterSpacing: "0.02em",
-          }}
-        >
-          Notifications
-        </span>
-      </button>
-
-      {/* Right: folder / storage status */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 5,
-        }}
-      >
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: folderLinked ? "#22C55E" : "#EF4444",
-            flexShrink: 0,
-            boxShadow: folderLinked
-              ? "0 0 6px rgba(34,197,94,0.7)"
-              : "0 0 5px rgba(239,68,68,0.5)",
-          }}
-        />
-        <span
-          style={{
-            fontSize: 10,
-            color: "rgba(255,255,255,0.45)",
-            fontWeight: 500,
-            maxWidth: 100,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {displayFolder}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 /** Alert banner shown when linked folder becomes unreachable */
 function FolderUnreachableAlert() {
   const { folderUnreachable, linkFolderAndSync } = useBackup();
@@ -208,7 +73,7 @@ function FolderUnreachableAlert() {
       data-ocid="storage.error_state"
       style={{
         position: "fixed",
-        bottom: 90,
+        bottom: `calc(${BOTTOM_NAV_H + 10}px + env(safe-area-inset-bottom, 0px))`,
         left: "50%",
         transform: "translateX(-50%)",
         width: "calc(100% - 32px)",
@@ -255,6 +120,7 @@ function FolderUnreachableAlert() {
           cursor: "pointer",
           flexShrink: 0,
           whiteSpace: "nowrap",
+          touchAction: "manipulation",
         }}
       >
         Re-link
@@ -272,6 +138,7 @@ function FolderUnreachableAlert() {
           lineHeight: 1,
           flexShrink: 0,
           padding: "0 4px",
+          touchAction: "manipulation",
         }}
       >
         &times;
@@ -307,7 +174,7 @@ function FullScreenTip() {
       data-ocid="fullscreen.tip.toast"
       style={{
         position: "fixed",
-        bottom: "calc(80px + env(safe-area-inset-bottom, 0px) + 8px)",
+        bottom: `calc(${BOTTOM_NAV_H + 10}px + env(safe-area-inset-bottom, 0px) + 8px)`,
         left: 16,
         right: 16,
         zIndex: 8500,
@@ -319,8 +186,6 @@ function FullScreenTip() {
         alignItems: "center",
         gap: 10,
         boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
-        maxWidth: 430,
-        margin: "0 auto",
       }}
     >
       <span style={{ fontSize: 16 }}>&#x1F4F2;</span>
@@ -347,6 +212,7 @@ function FullScreenTip() {
           lineHeight: 1,
           padding: "0 2px",
           flexShrink: 0,
+          touchAction: "manipulation",
         }}
       >
         &times;
@@ -363,7 +229,6 @@ function AppInner() {
   const [dataReady, setDataReady] = useState(false);
   const [showPermManager, setShowPermManager] = useState(false);
   const [splashDone, setSplashDone] = useState(false);
-  // Signal splash to hide as soon as React tree mounts — DB sync continues in background
   const [splashHide, setSplashHide] = useState(false);
 
   const { palette } = useTheme();
@@ -374,7 +239,6 @@ function AppInner() {
     setSplashHide(true);
   }, []);
 
-  // Data-First Initialization: check localStorage before showing UI
   useEffect(() => {
     const hasData =
       !!localStorage.getItem("nk_subjects") ||
@@ -388,18 +252,15 @@ function AppInner() {
   }, []);
 
   useEffect(() => {
-    // Register service worker
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
     if ("storage" in navigator && "persist" in navigator.storage) {
       navigator.storage.persist().catch(() => {});
     }
-    // God Mode: check & request filesystem permissions first, then create dir
     ensureFilesystemPermissions()
       .then(() => ensureNakshaDataDir())
       .catch(() => {});
-    // Show Permission Manager on first launch (after onboarding)
     Preferences.get({ key: PREF_KEYS.permissionsAsked }).then(({ value }) => {
       if (!value && getUsername()) {
         setShowPermManager(true);
@@ -407,9 +268,7 @@ function AppInner() {
     });
   }, []);
 
-  const handleComplete = useCallback((_actualMs: number) => {
-    // Safety net — actual save happens in TimerScreen via EnergyRatingModal
-  }, []);
+  const handleComplete = useCallback((_actualMs: number) => {}, []);
 
   const timer = useTimer(handleComplete);
   const timerRef = useRef(timer);
@@ -443,13 +302,9 @@ function AppInner() {
     setActiveTab("timer");
   };
 
-  const handleClearTopic = () => {
-    setSelectedTopic(null);
-  };
-
+  const handleClearTopic = () => setSelectedTopic(null);
   const timerBarVisible = timer.isRunning || timer.isPaused;
 
-  // Show splash screen on first load
   if (!splashDone) {
     return (
       <SplashScreen
@@ -474,7 +329,10 @@ function AppInner() {
       {/* Floating sync indicator — only visible while saving */}
       <HeaderBar />
 
-      {/* Centered max-width shell */}
+      {/* Fixed bottom dock nav — z-index 100 */}
+      <BottomNav active={activeTab} onChange={setActiveTab} />
+
+      {/* Centered max-width content shell */}
       <div
         style={{
           maxWidth: 430,
@@ -485,8 +343,16 @@ function AppInner() {
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
-          paddingTop: "env(safe-area-inset-top)",
-          paddingBottom: "env(safe-area-inset-bottom)",
+          /*
+           * paddingTop is intentionally 0 / removed.
+           * The manifest uses display:"fullscreen" which hides the Android
+           * status bar entirely — no safe-area gap is needed at the top.
+           * Adding env(safe-area-inset-top) here was showing as a visible
+           * colored strip / border line at the very top of the screen.
+           * Bottom: account for fixed dock (70px) + system gesture inset.
+           */
+          paddingTop: 0,
+          paddingBottom: `calc(${BOTTOM_NAV_H}px + env(safe-area-inset-bottom, 0px))`,
         }}
       >
         {!dataReady && (
@@ -569,7 +435,7 @@ function AppInner() {
 
           {timerBarVisible && <div style={{ height: 46 }} />}
 
-          {/* Main content area — flex: 1 so it takes remaining space; overflow hidden clips to container */}
+          {/* Main content area */}
           <div
             style={{
               flex: 1,
@@ -615,19 +481,14 @@ function AppInner() {
               {activeTab === "settings" && <SettingsScreen />}
             </div>
           </div>
-
-          {/* Status bar above bottom nav */}
-          <AppStatusBar />
-
-          <BottomNav active={activeTab} onChange={setActiveTab} />
         </div>
-
-        {/* Install-to-home-screen prompt banner */}
-        <InstallPrompt />
-
-        {/* One-time full-screen tip */}
-        <FullScreenTip />
       </div>
+
+      {/* Install-to-home-screen prompt banner */}
+      <InstallPrompt />
+
+      {/* One-time full-screen tip */}
+      <FullScreenTip />
     </div>
   );
 }

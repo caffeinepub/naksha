@@ -9,12 +9,26 @@ import { isCapacitorNative } from "./capacitorStorage";
 const TIMER_NOTIF_ID = 9999;
 const CHANNEL_ID = "naksha-timer";
 
+/** IDs for live ongoing + completion notifications */
+export const LIVE_NOTIF_ID = 8888;
+export const DONE_NOTIF_ID = 8889;
+export const LIVE_CHANNEL_ID = "naksha-timer-live";
+
 /** Module-level guard so we only request once per session */
 let permRequested = false;
 
 /** Dynamic import that bypasses TypeScript module resolution checks */
 async function dynamicImport(pkg: string): Promise<any> {
   return new Function("p", "return import(p)")(pkg);
+}
+
+/** Format milliseconds as MM:SS */
+function formatTime(ms: number): string {
+  if (!ms || Number.isNaN(ms) || ms <= 0) return "00:00";
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 /**
@@ -77,8 +91,112 @@ export async function createNotificationChannel(): Promise<void> {
       vibration: true,
       sound: "beep",
     });
+    // Also create the live notification channel
+    await createLiveNotificationChannel();
   } catch (e) {
     console.warn("[CapNotif] createChannel error:", e);
+  }
+}
+
+/**
+ * Create the channel for live/ongoing timer notifications.
+ * Uses lower importance and no sound/vibration (silent per-second updates).
+ */
+export async function createLiveNotificationChannel(): Promise<void> {
+  if (!isCapacitorNative()) return;
+  try {
+    const { LocalNotifications } = await dynamicImport(
+      "@capacitor/local-notifications",
+    );
+    await LocalNotifications.createChannel({
+      id: LIVE_CHANNEL_ID,
+      name: "Live Timer",
+      description: "Live countdown while timer is running (non-dismissable)",
+      importance: 4, // IMPORTANCE_DEFAULT — visible but not intrusive
+      vibration: false,
+      sound: undefined,
+    });
+  } catch (e) {
+    console.warn("[CapNotif] createLiveChannel error:", e);
+  }
+}
+
+/**
+ * Post or update the ongoing native notification.
+ * ongoing:true + autoCancel:false makes it non-dismissable on Android.
+ */
+export async function postOngoingNativeNotification(
+  remainingMs: number,
+  _topic: string,
+): Promise<void> {
+  if (!isCapacitorNative()) return;
+  try {
+    const { LocalNotifications } = await dynamicImport(
+      "@capacitor/local-notifications",
+    );
+    const timeStr = formatTime(remainingMs);
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: LIVE_NOTIF_ID,
+          title: "Naksha Timer Running",
+          body: `⏱ ${timeStr} remaining`,
+          channelId: LIVE_CHANNEL_ID,
+          schedule: { at: new Date(Date.now() + 100) },
+          // Cast to any because TS types may not include ongoing/autoCancel
+          ongoing: true,
+          autoCancel: false,
+        } as any,
+      ],
+    });
+  } catch (e) {
+    console.warn("[CapNotif] postOngoingNativeNotification error:", e);
+  }
+}
+
+/**
+ * Cancel the ongoing live native notification.
+ */
+export async function cancelNativeOngoingNotification(): Promise<void> {
+  if (!isCapacitorNative()) return;
+  try {
+    const { LocalNotifications } = await dynamicImport(
+      "@capacitor/local-notifications",
+    );
+    await LocalNotifications.cancel({
+      notifications: [{ id: LIVE_NOTIF_ID }],
+    });
+  } catch {
+    // Ignore — may not have been scheduled
+  }
+}
+
+/**
+ * Cancel ongoing, then post the completion notification (dismissable).
+ */
+export async function postNativeCompletionNotification(): Promise<void> {
+  if (!isCapacitorNative()) return;
+  await cancelNativeOngoingNotification().catch(() => {});
+  try {
+    const { LocalNotifications } = await dynamicImport(
+      "@capacitor/local-notifications",
+    );
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          id: DONE_NOTIF_ID,
+          title: "Naksha Timer Done!",
+          body: "Your timer has finished. Tap to open.",
+          channelId: CHANNEL_ID,
+          schedule: { at: new Date(Date.now() + 100) },
+          vibrations: true,
+          autoCancel: true,
+          ongoing: false,
+        } as any,
+      ],
+    });
+  } catch (e) {
+    console.warn("[CapNotif] postNativeCompletionNotification error:", e);
   }
 }
 
