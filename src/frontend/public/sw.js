@@ -1,6 +1,6 @@
-/* Naksha Service Worker — v22 (Full PWA offline + background notifications + live timer) */
+/* Naksha Service Worker — v25 (Full PWA offline + background notifications + live timer) */
 
-const CACHE_VERSION = 'v22';
+const CACHE_VERSION = 'v25';
 const CACHE_NAME = `naksha-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `naksha-runtime-${CACHE_VERSION}`;
 
@@ -11,7 +11,6 @@ const PRECACHE_ASSETS = [
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
-  '/assets/fonts/Satoshi.woff2',
 ];
 
 // ────────────────────────────────────────────────
@@ -46,11 +45,6 @@ self.addEventListener('activate', (event) => {
 
 // ────────────────────────────────────────────────
 // FETCH — Workbox-style routing
-//
-//  Navigation (HTML)          → Network-first, cache fallback → offline shell
-//  Static assets (JS/CSS/img) → Cache-first, network fallback (instant loads)
-//  API calls (/api/*)         → Network-only (pass through)
-//  Cross-origin               → Pass through
 // ────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
   const { request } = event;
@@ -68,7 +62,6 @@ self.addEventListener('fetch', (event) => {
   const isStaticAsset = /\.(js|css|woff2?|ttf|eot|svg|png|jpg|jpeg|gif|ico|webp|json)$/i.test(url.pathname);
 
   if (isNavigation) {
-    // Network-first: always try fresh HTML, fall back to cached shell
     event.respondWith(
       fetch(request)
         .then((response) => {
@@ -85,7 +78,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (isStaticAsset) {
-    // Cache-first: instant offline loads for all static assets
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
@@ -100,7 +92,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Default: network with cache fallback
   event.respondWith(
     fetch(request)
       .then((response) => {
@@ -118,10 +109,12 @@ self.addEventListener('fetch', (event) => {
 // TIMER STATE + BACKGROUND NOTIFICATIONS
 // ────────────────────────────────────────────────
 
-let timerInterval = null;
 let notificationInterval = null;
+let timerInterval = null;
 let timerData = null;
 let scheduledAlarms = {};
+// Track whether a live notification is currently shown
+let liveNotifShown = false;
 
 function formatTime(ms) {
   if (!ms || isNaN(ms) || ms <= 0) return '00:00';
@@ -129,14 +122,6 @@ function formatTime(ms) {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-function buildProgressBar(elapsed, total) {
-  if (!total || isNaN(total) || total <= 0) return '\u2591'.repeat(10);
-  if (isNaN(elapsed) || elapsed < 0) elapsed = 0;
-  const ratio = Math.min(Math.max(elapsed / total, 0), 1);
-  const filled = Math.round(ratio * 10);
-  return '\u2588'.repeat(filled) + '\u2591'.repeat(10 - filled);
 }
 
 function getRemaining() {
@@ -161,35 +146,34 @@ function getElapsed() {
   return isNaN(e) ? 0 : e;
 }
 
-// ─── Legacy fallback (60s interval) — kept as backup, superseded by TIMER_TICK ───
-async function updateNotification() {
-  if (!timerData) return;
+/**
+ * Show or silently UPDATE the live timer notification.
+ *
+ * KEY FIX: Do NOT call n.close() before re-showing.
+ * When you use the same `tag`, the browser replaces the notification
+ * in-place with NO visual flash. Closing + re-showing is what causes
+ * the notification to disappear and reappear every second.
+ *
+ * renotify: false  = no sound/vibration on update
+ * requireInteraction: true = stays in shade until timer ends
+ */
+async function updateLiveNotification(remainingMs, isPaused) {
+  const timeStr = formatTime(remainingMs);
+  const topic = (timerData && timerData.topic) ? timerData.topic : 'Study Session';
 
-  const remaining = getRemaining();
-  const elapsed = getElapsed();
-  const total = timerData.totalDuration || 0;
-
-  const safeRemaining = isNaN(remaining) ? 0 : Math.max(0, remaining);
-  const safeElapsed = isNaN(elapsed) ? 0 : Math.max(0, elapsed);
-  const safeTotal = isNaN(total) || total <= 0 ? 1 : total;
-
-  const timeStr = formatTime(safeRemaining);
-  const topic = timerData.topic || 'Study Session';
-
-  const body = timerData.isPaused
+  const body = isPaused
     ? `\u23f8 Paused \u2014 ${timeStr} remaining`
     : `\u23f1 ${timeStr} remaining`;
 
-  const actions = timerData.isPaused
+  const actions = isPaused
     ? [{ action: 'resume', title: '\u25b6 Resume' }, { action: 'stop', title: '\u23f9 Stop' }]
     : [{ action: 'pause', title: '\u23f8 Pause' }, { action: 'stop', title: '\u23f9 Stop' }];
 
-  self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
-
-  self.registration.showNotification(`Naksha \u23f1 ${topic}`, {
+  // Show notification — same tag replaces in-place, no flash
+  await self.registration.showNotification(`Naksha \u23f1 ${topic}`, {
     body,
     tag: 'naksha-timer-live',
-    renotify: false,
+    renotify: false,   // CRITICAL: false = silent in-place update, no flash
     silent: true,
     requireInteraction: true,
     actions,
@@ -197,20 +181,30 @@ async function updateNotification() {
     badge: '/icon-192.png',
     data: { type: 'timer-live' },
   }).catch(() => {});
+
+  liveNotifShown = true;
+}
+
+// 60-second fallback for when tab is backgrounded
+async function fallbackUpdateNotification() {
+  if (!timerData) return;
+  await updateLiveNotification(getRemaining(), timerData.isPaused);
 }
 
 self.addEventListener('message', async (event) => {
   const { type, payload } = event.data || {};
 
-  // ─── TIMER_START: initialise state, fire first notification, set 10-min milestone interval ───
+  // ─── TIMER_START ───
   if (type === 'TIMER_START') {
     timerData = { ...payload, isPaused: false };
+    liveNotifShown = false;
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
-    // First notification via legacy path (main thread now drives per-second updates via TIMER_TICK)
-    updateNotification();
-    // 60-second fallback interval (in case tab is backgrounded and TIMER_TICK messages stop)
-    notificationInterval = setInterval(updateNotification, 60000);
+    // Show first notification immediately
+    await updateLiveNotification(timerData.totalDuration || timerData.duration || 0, false);
+    // 60-second fallback for when tab goes to background
+    notificationInterval = setInterval(fallbackUpdateNotification, 60000);
+    // 10-minute milestone
     let minuteCount = 0;
     timerInterval = setInterval(() => {
       minuteCount++;
@@ -226,30 +220,13 @@ self.addEventListener('message', async (event) => {
     }, 60000);
   }
 
-  // ─── TIMER_TICK: per-second update from main thread — replaces notification silently ───
+  // ─── TIMER_TICK: per-second update from main thread ───
+  // FIX: Just call showNotification with the same tag — NO close() first.
+  // The browser does a silent in-place replacement. Close+reshow = flash.
   if (type === 'TIMER_TICK') {
     if (timerData && !timerData.isPaused) {
       const remainingMs = (payload && payload.remainingMs != null) ? payload.remainingMs : getRemaining();
-      const topic = (timerData && timerData.topic) ? timerData.topic : 'Study Session';
-      const timeStr = formatTime(remainingMs);
-      const body = `\u23f1 ${timeStr} remaining`;
-
-      // Close existing then re-show — renotify:false means no sound/vibration
-      self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
-      self.registration.showNotification('Naksha Timer Running', {
-        body,
-        tag: 'naksha-timer-live',
-        renotify: false,
-        silent: true,
-        requireInteraction: true,
-        icon: '/icon-192.png',
-        badge: '/icon-192.png',
-        actions: [
-          { action: 'pause', title: '\u23f8 Pause' },
-          { action: 'stop', title: '\u23f9 Stop' },
-        ],
-        data: { type: 'timer-live' },
-      }).catch(() => {});
+      await updateLiveNotification(remainingMs, false);
     }
   }
 
@@ -259,7 +236,8 @@ self.addEventListener('message', async (event) => {
       timerData.isPaused = true;
       timerData.elapsed = payload?.elapsed || timerData.elapsed || 0;
     }
-    updateNotification();
+    const rem = timerData ? (timerData.totalDuration || 0) - (timerData.elapsed || 0) : 0;
+    await updateLiveNotification(Math.max(0, rem), true);
   }
 
   // ─── TIMER_RESUME ───
@@ -268,24 +246,16 @@ self.addEventListener('message', async (event) => {
       timerData.isPaused = false;
       timerData.startTime = payload?.startTime || Date.now();
     }
-    updateNotification();
+    await updateLiveNotification(getRemaining(), false);
   }
 
-  // ─── TIMER_STOP (legacy) ───
-  if (type === 'TIMER_STOP') {
+  // ─── TIMER_STOP / TIMER_CANCEL ───
+  if (type === 'TIMER_STOP' || type === 'TIMER_CANCEL') {
     timerData = null;
+    liveNotifShown = false;
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
-    self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
-    self.registration.getNotifications({ tag: 'naksha-timer-done' }).then((ns) => ns.forEach((n) => n.close()));
-    self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
-  }
-
-  // ─── TIMER_CANCEL: user reset/cancelled — remove all timer notifications ───
-  if (type === 'TIMER_CANCEL') {
-    timerData = null;
-    clearInterval(notificationInterval);
-    clearInterval(timerInterval);
+    // Only close existing notifications — no re-show
     self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
     self.registration.getNotifications({ tag: 'naksha-timer-done' }).then((ns) => ns.forEach((n) => n.close()));
     self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
@@ -295,34 +265,16 @@ self.addEventListener('message', async (event) => {
     if (timerData) timerData = { ...timerData, ...payload };
   }
 
-  // ─── TIMER_COMPLETE (legacy) ───
-  if (type === 'TIMER_COMPLETE') {
-    clearInterval(notificationInterval);
-    clearInterval(timerInterval);
-    timerData = null;
-    self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
-    self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
-    await self.registration.showNotification('Naksha \u23f1 Session Complete! \ud83c\udf89', {
-      body: 'Great work! Your study session is done.',
-      tag: 'naksha-timer-done',
-      renotify: true,
-      requireInteraction: true,
-      vibrate: [200, 100, 200, 100, 400],
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      data: { type: 'timer-complete' },
-    });
-  }
-
-  // ─── TIMER_COMPLETE_LIVE: fired by main thread after timer hits zero ───
+  // ─── TIMER_COMPLETE_LIVE ───
   if (type === 'TIMER_COMPLETE_LIVE') {
     clearInterval(notificationInterval);
     clearInterval(timerInterval);
     timerData = null;
-    // Cancel live ongoing
+    liveNotifShown = false;
+    // Close live notification
     self.registration.getNotifications({ tag: 'naksha-timer-live' }).then((ns) => ns.forEach((n) => n.close()));
     self.registration.getNotifications({ tag: 'naksha-timer' }).then((ns) => ns.forEach((n) => n.close()));
-    // Post completion notification (dismissable, vibrates)
+    // Post completion notification (dismissable, vibrates, NOT ongoing)
     self.registration.showNotification('Naksha Timer Done! \ud83c\udf89', {
       body: 'Your timer has finished. Tap to open.',
       tag: 'naksha-timer-done',
@@ -383,7 +335,8 @@ self.addEventListener('notificationclick', (event) => {
     self.clients.matchAll({ type: 'window' }).then((clients) => {
       clients.forEach((c) => c.postMessage({ type: 'PAUSE_FROM_SW' }));
     });
-    updateNotification();
+    const rem = timerData ? (timerData.totalDuration || 0) - (timerData.elapsed || 0) : 0;
+    updateLiveNotification(Math.max(0, rem), true);
     return;
   }
 
@@ -392,7 +345,7 @@ self.addEventListener('notificationclick', (event) => {
     self.clients.matchAll({ type: 'window' }).then((clients) => {
       clients.forEach((c) => c.postMessage({ type: 'RESUME_FROM_SW' }));
     });
-    updateNotification();
+    updateLiveNotification(getRemaining(), false);
     return;
   }
 
@@ -416,8 +369,11 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 self.addEventListener('notificationclose', (event) => {
-  // If user manages to close the live notification, re-show after 15s if still running
+  // If user somehow closes the live notification, re-show after 5s if still running
   if (event.notification.tag === 'naksha-timer-live' && timerData && !timerData.isPaused) {
-    setTimeout(() => { if (timerData) updateNotification(); }, 15000);
+    liveNotifShown = false;
+    setTimeout(() => {
+      if (timerData) updateLiveNotification(getRemaining(), false);
+    }, 5000);
   }
 });

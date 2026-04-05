@@ -1,6 +1,7 @@
 import { type FC, useEffect, useState } from "react";
 import { useTheme } from "../context/ThemeContext";
 import type { TimerState } from "../types";
+import { TOP_BAR_HEIGHT } from "./TopBar";
 
 function formatRemaining(ms: number): string {
   const safe = Number.isNaN(ms) || ms < 0 ? 0 : ms;
@@ -20,7 +21,6 @@ const TimerStatusBar: FC<Props> = ({ timerState, remaining, onGoToTimer }) => {
   const { palette } = useTheme();
   const [displayRemaining, setDisplayRemaining] = useState(remaining);
 
-  // Update display remaining every second for live countdown
   useEffect(() => {
     setDisplayRemaining(remaining);
     if (!timerState?.isRunning) return;
@@ -50,21 +50,20 @@ const TimerStatusBar: FC<Props> = ({ timerState, remaining, onGoToTimer }) => {
       onClick={onGoToTimer}
       style={{
         position: "fixed",
-        top: 0,
+        // Sit directly below the TopBar
+        top: `calc(${TOP_BAR_HEIGHT}px + env(safe-area-inset-top, 0px))`,
         left: "50%",
         transform: "translateX(-50%)",
         width: "100%",
         maxWidth: 430,
-        zIndex: 150,
+        zIndex: 450, // below TopBar (500) but above content (1)
         background: "rgba(10,10,15,0.92)",
         backdropFilter: "blur(20px)",
         WebkitBackdropFilter: "blur(20px)",
-        /* No border, no box-shadow — seamless into status bar */
         border: "none",
         boxShadow: "none",
-        /* Push content below the notch / status bar */
-        paddingTop: "max(10px, env(safe-area-inset-top))",
-        paddingBottom: 10,
+        paddingTop: 8,
+        paddingBottom: 8,
         paddingLeft: 18,
         paddingRight: 18,
         display: "flex",

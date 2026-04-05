@@ -67,6 +67,8 @@
 
   /* Bottom nav dock height — used for safe content padding */
   --bottom-nav-height: 70px;
+  /* Top bar height — used for safe content padding */
+  --top-bar-height: 44px;
 }
 
 /* === Glassmorphism utility === */
@@ -183,15 +185,39 @@
   }
 }
 
+/* === TopBar: Naksha glow pulse animation === */
+@keyframes naksha-glow-pulse {
+  0%,
+  100% {
+    text-shadow: 0 0 8px var(--accent-glow, #1db954), 0 0 20px
+      var(--accent-glow, #1db954), 0 0 40px var(--accent-glow, #1db954);
+    opacity: 1;
+  }
+  50% {
+    text-shadow: 0 0 12px var(--accent-glow, #1db954), 0 0 30px
+      var(--accent-glow, #1db954), 0 0 60px var(--accent-glow, #1db954), 0 0
+      80px var(--accent-glow, #1db954);
+    opacity: 0.95;
+  }
+}
+
+/* === TopBar: online status dot pulse === */
+@keyframes online-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 4px #22c55e, 0 0 8px #22c55e40;
+  }
+  50% {
+    box-shadow: 0 0 8px #22c55e, 0 0 18px #22c55e80;
+  }
+}
+
 /* ===========================
    PWA NATIVE-FEEL ADDITIONS
    =========================== */
 
 /*
  * CRITICAL: html + body background must match the app's dark background exactly (#0a0a0f).
- * This eliminates the visible divider/separation line below the status bar.
- * The theme-color meta tag and manifest theme_color must also match this value.
- * Android's standalone PWA mode reads body background-color to tint the system nav bar.
  */
 html,
 body {
@@ -213,8 +239,7 @@ body {
   background-color: #0a0a0f;
   border: none;
   box-shadow: none;
-  /* Content starts at the exact safe area boundary — no fixed pixel gap or line */
-  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: 0;
 }
 
 /* Safe area padding helpers */
@@ -444,11 +469,6 @@ input[type="range"]::-webkit-slider-thumb {
   padding-top: env(safe-area-inset-top);
 }
 
-/**
- * .header-safe — use on the outermost header/top-bar container.
- * Pushes content below the phone's camera notch or status bar.
- * Minimum 0px for edge-to-edge: we only inset by the actual safe area.
- */
 .header-safe {
   padding-top: env(safe-area-inset-top, 0px);
 }

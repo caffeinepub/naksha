@@ -41,9 +41,11 @@ export function useTimer(onComplete: (actualMs: number) => void) {
   const lastMilestoneRef = useRef(0);
   const completedRef = useRef(false);
   const stateRef = useRef<TimerState | null>(null);
-  const liveNotifIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
+  // Interval that sends TIMER_TICK to the service worker every second.
+  // The SW handles the notification update — no showLiveNotification() here.
+  // Calling showLiveNotification() from BOTH main thread AND SW causes
+  // double-show which is what made the notification flash every second.
+  const swTickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Restore on mount
   useEffect(() => {
@@ -64,35 +66,33 @@ export function useTimer(onComplete: (actualMs: number) => void) {
     clearTimerStateIDB();
   }, []);
 
-  // ── Live notification interval helpers (stable refs) ──
-  const stopNotifInterval = useCallback(() => {
-    if (liveNotifIntervalRef.current) {
-      clearInterval(liveNotifIntervalRef.current);
-      liveNotifIntervalRef.current = null;
+  // Stop the SW tick interval
+  const stopSwTick = useCallback(() => {
+    if (swTickIntervalRef.current) {
+      clearInterval(swTickIntervalRef.current);
+      swTickIntervalRef.current = null;
     }
   }, []);
 
-  const startNotifInterval = useCallback(
+  // Start the SW tick interval — sends remainingMs to SW every second.
+  // SW does the in-place notification update (no close+reshow = no flash).
+  const startSwTick = useCallback(
     (ref: React.MutableRefObject<TimerState | null>) => {
-      if (liveNotifIntervalRef.current) {
-        clearInterval(liveNotifIntervalRef.current);
-        liveNotifIntervalRef.current = null;
-      }
-      liveNotifIntervalRef.current = setInterval(() => {
+      stopSwTick();
+      swTickIntervalRef.current = setInterval(() => {
         const s = ref.current;
         if (!s || s.isPaused) return;
         const rem = Math.max(
           0,
           s.totalDuration - (s.elapsed + (Date.now() - s.startTime)),
         );
-        showLiveNotification(rem, s.topic).catch(() => {});
         postToSW({
           type: "TIMER_TICK",
           payload: { remainingMs: rem, topic: s.topic },
         });
       }, 1000);
     },
-    [],
+    [stopSwTick],
   );
 
   // Tick loop
@@ -135,8 +135,7 @@ export function useTimer(onComplete: (actualMs: number) => void) {
         tickRef.current = null;
         playCompletionFanfare();
         clearState();
-        // Stop live notification interval and fire completion notification
-        stopNotifInterval();
+        stopSwTick();
         showCompletionNotification().catch(() => {});
         postToSW({ type: "TIMER_COMPLETE_LIVE" });
         const newState = null;
@@ -149,7 +148,7 @@ export function useTimer(onComplete: (actualMs: number) => void) {
     return () => {
       if (tickRef.current) clearInterval(tickRef.current);
     };
-  }, [state, clearState, onComplete, stopNotifInterval]);
+  }, [state, clearState, onComplete, stopSwTick]);
 
   // Auto-save on page hide / close
   useEffect(() => {
@@ -159,7 +158,7 @@ export function useTimer(onComplete: (actualMs: number) => void) {
       const elapsedNow = s.isPaused
         ? s.elapsed
         : s.elapsed + (Date.now() - s.startTime);
-      if (elapsedNow < 10000) return; // don't save under 10 seconds
+      if (elapsedNow < 10000) return;
       const session: Session = {
         id: Date.now().toString(36) + Math.random().toString(36).slice(2),
         topic: s.topic,
@@ -184,7 +183,7 @@ export function useTimer(onComplete: (actualMs: number) => void) {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, []); // runs once
+  }, []);
 
   const startTimer = useCallback(
     (topic: string, durationMs: number) => {
@@ -207,26 +206,29 @@ export function useTimer(onComplete: (actualMs: number) => void) {
         payload: {
           topic,
           startTime: newState.startTime,
+          totalDuration: durationMs,
           duration: durationMs,
           elapsed: 0,
         },
       });
-      // Schedule a precise Capacitor notification for when the timer ends
+      // Schedule a precise Capacitor notification for when the timer ends (native only)
       ensureNotificationPermissionOnce().catch(() => {});
       cancelTimerNotification();
       scheduleTimerCompleteNotification(topic, durationMs);
 
-      // Live notification: request permission then start interval
+      // Request permission then start the SW tick interval.
+      // The SW will handle all notification updates — no showLiveNotification from here.
       checkAndRequestNotificationPermission()
         .then((perm) => {
           if (perm === "granted") {
-            showLiveNotification(durationMs, topic).catch(() => {});
-            startNotifInterval(stateRef);
+            // Let TIMER_START in SW show the first notification.
+            // Start the per-second tick that sends remainingMs to SW.
+            startSwTick(stateRef);
           }
         })
         .catch(() => {});
     },
-    [saveState, startNotifInterval],
+    [saveState, startSwTick],
   );
 
   const pauseTimer = useCallback(() => {
@@ -241,12 +243,10 @@ export function useTimer(onComplete: (actualMs: number) => void) {
     stateRef.current = updated;
     saveState(updated);
     playPauseSound();
-    // Stop interval but keep notification showing paused time
-    stopNotifInterval();
-    const rem = Math.max(0, updated.totalDuration - updated.elapsed);
-    showLiveNotification(rem, updated.topic || "").catch(() => {});
+    stopSwTick();
+    // Tell SW to update notification to paused state
     postToSW({ type: "TIMER_PAUSE", payload: { elapsed: elapsedNow } });
-  }, [state, saveState, stopNotifInterval]);
+  }, [state, saveState, stopSwTick]);
 
   const resumeTimer = useCallback(() => {
     if (!state || !state.isPaused) return;
@@ -260,14 +260,9 @@ export function useTimer(onComplete: (actualMs: number) => void) {
     stateRef.current = updated;
     saveState(updated);
     playResumeSound();
-    // Update notification and restart interval
-    showLiveNotification(
-      Math.max(0, updated.totalDuration - updated.elapsed),
-      updated.topic || "",
-    ).catch(() => {});
-    startNotifInterval(stateRef);
     postToSW({ type: "TIMER_RESUME", payload: { startTime: newStartTime } });
-  }, [state, saveState, startNotifInterval]);
+    startSwTick(stateRef);
+  }, [state, saveState, startSwTick]);
 
   const stopTimer = useCallback(() => {
     if (!state) return;
@@ -278,17 +273,15 @@ export function useTimer(onComplete: (actualMs: number) => void) {
     tickRef.current = null;
     playCompletionFanfare();
     clearState();
-    // Stop interval and clear all notifications
-    stopNotifInterval();
+    stopSwTick();
     cancelAllTimerNotifications().catch(() => {});
     postToSW({ type: "TIMER_CANCEL" });
     const newState = null;
     setState(newState);
     stateRef.current = newState;
-    // Cancel the scheduled Capacitor notification since user stopped manually
     cancelTimerNotification();
     onComplete(elapsedNow);
-  }, [state, clearState, onComplete, stopNotifInterval]);
+  }, [state, clearState, onComplete, stopSwTick]);
 
   return {
     remaining,

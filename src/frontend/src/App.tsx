@@ -6,6 +6,7 @@ import NotificationBanner from "./components/NotificationBanner";
 import Onboarding from "./components/Onboarding";
 import SplashScreen from "./components/SplashScreen";
 import TimerStatusBar from "./components/TimerStatusBar";
+import TopBar, { TOP_BAR_HEIGHT } from "./components/TopBar";
 import { AppearanceProvider, useAppearance } from "./context/AppearanceContext";
 import { BackupProvider, useBackup } from "./context/BackupContext";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
@@ -30,7 +31,7 @@ const BOTTOM_NAV_H = 70;
  * Minimal floating sync indicator — only visible while saving.
  * Zero chrome when idle.
  */
-function HeaderBar() {
+function SyncIndicator() {
   const { status } = useBackup();
   const isSaving = status === "saving";
 
@@ -40,9 +41,9 @@ function HeaderBar() {
     <div
       style={{
         position: "fixed",
-        top: "max(12px, env(safe-area-inset-top, 12px))",
+        top: `calc(${TOP_BAR_HEIGHT}px + env(safe-area-inset-top, 0px) + 8px)`,
         right: 12,
-        zIndex: 200,
+        zIndex: 600,
         display: "flex",
         alignItems: "center",
         pointerEvents: "none",
@@ -50,7 +51,7 @@ function HeaderBar() {
       aria-hidden="true"
     >
       <RefreshCw
-        size={18}
+        size={16}
         color="var(--accent)"
         style={{
           animation: "spin 0.6s linear infinite",
@@ -314,6 +315,9 @@ function AppInner() {
     );
   }
 
+  // Total top offset: TopBar height + safe area inset
+  const topOffset = `calc(${TOP_BAR_HEIGHT}px + env(safe-area-inset-top, 0px))`;
+
   return (
     <div
       style={{
@@ -326,8 +330,11 @@ function AppInner() {
         background: palette.bg,
       }}
     >
-      {/* Floating sync indicator — only visible while saving */}
-      <HeaderBar />
+      {/* Persistent top bar: Naksha glow + online/offline */}
+      <TopBar />
+
+      {/* Floating sync indicator */}
+      <SyncIndicator />
 
       {/* Fixed bottom dock nav — z-index 100 */}
       <BottomNav active={activeTab} onChange={setActiveTab} />
@@ -343,15 +350,8 @@ function AppInner() {
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
-          /*
-           * paddingTop is intentionally 0 / removed.
-           * The manifest uses display:"fullscreen" which hides the Android
-           * status bar entirely — no safe-area gap is needed at the top.
-           * Adding env(safe-area-inset-top) here was showing as a visible
-           * colored strip / border line at the very top of the screen.
-           * Bottom: account for fixed dock (70px) + system gesture inset.
-           */
-          paddingTop: 0,
+          // Push content below the top bar
+          paddingTop: topOffset,
           paddingBottom: `calc(${BOTTOM_NAV_H}px + env(safe-area-inset-bottom, 0px))`,
         }}
       >
